@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>Roblox Avatar Studio (Auto Face Fix)</title>
+    <title>Roblox Avatar Studio (Simple & Stable)</title>
     <style>
         body { margin: 0; display: flex; background: #1e2128; color: #cbd5e1; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; overflow: hidden; height: 100vh; }
         #sidebar { width: 350px; background: #0f172a; padding: 20px; overflow-y: auto; height: 100%; box-sizing: border-box; flex-shrink: 0; }
@@ -14,12 +14,11 @@
         button { width: 100%; padding: 10px; background: #3b82f6; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; margin-bottom: 10px; transition: 0.2s; }
         button:hover { background: #2563eb; }
         
-        .control-group { margin-bottom: 15px; border-bottom: 1px solid #334155; padding-bottom: 10px;}
-        .control-group label { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 5px; color: #94a3b8; font-weight: bold; }
-        input[type="range"] { width: 100%; cursor: pointer; }
+        .control-group { margin-bottom: 15px; border-bottom: 1px solid #334155; padding-bottom: 15px;}
+        .control-group label { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 8px; color: #94a3b8; font-weight: bold; }
         
-        .row-buttons { display: flex; gap: 10px; margin-bottom: 10px; }
-        .row-buttons button { margin: 0; background: #475569; }
+        .row-buttons { display: flex; gap: 5px; margin-bottom: 5px; flex-wrap: wrap; }
+        .row-buttons button { flex: 1; margin: 0; background: #475569; padding: 8px 5px; font-size: 12px; }
         .row-buttons button.active { background: #3b82f6; }
     </style>
 </head>
@@ -30,7 +29,7 @@
         
         <div class="control-group">
             <label>Input JSON Data</label>
-            <textarea id="jsonInput" placeholder='n8n에서 나온 JSON을 넣으세요'></textarea>
+            <textarea id="jsonInput" placeholder='[{"objUrl": "...", "mtlUrl": "..."}]'></textarea>
             <button onclick="loadModel()">Load Character</button>
         </div>
 
@@ -43,31 +42,35 @@
         </div>
 
         <div class="control-group">
-            <label>Model Size (Scale) <span id="val_scale">100</span></label>
-            <input type="range" id="model_scale" min="10" max="200" value="100" oninput="updateScale()">
+            <label>Model Size (Scale)</label>
+            <div class="row-buttons">
+                <button id="btnScale100" class="active" onclick="setScale(100)">100%</button>
+                <button id="btnScale75" onclick="setScale(75)">75%</button>
+                <button id="btnScale50" onclick="setScale(50)">50%</button>
+                <button id="btnScale25" onclick="setScale(25)">25%</button>
+            </div>
         </div>
 
         <div class="control-group">
             <label>Camera Angle</label>
             <div class="row-buttons">
-                <button onclick="setCameraAngle('front')">Front (정면)</button>
-                <button onclick="setCameraAngle('right30')">Right 30°</button>
+                <button id="btnAngleFront" class="active" onclick="setCameraAngle('front')">Front</button>
+                <button id="btnAngle30" onclick="setCameraAngle(30)">R 30°</button>
+                <button id="btnAngle45" onclick="setCameraAngle(45)">R 45°</button>
+                <button id="btnAngle60" onclick="setCameraAngle(60)">R 60°</button>
             </div>
         </div>
 
         <div class="control-group" style="border-bottom: none;">
-            <label>POSE CONTROL</label>
-            <label style="font-weight: normal;">Right Arm (상하) <span id="val_ra_z">0</span></label>
-            <input type="range" id="ra_z" min="-180" max="180" value="0" oninput="updatePose()">
-            <label style="font-weight: normal;">Right Arm (앞뒤) <span id="val_ra_x">0</span></label>
-            <input type="range" id="ra_x" min="-180" max="180" value="0" oninput="updatePose()">
-            <label style="font-weight: normal;">Left Arm (상하) <span id="val_la_z">0</span></label>
-            <input type="range" id="la_z" min="-180" max="180" value="0" oninput="updatePose()">
-            <label style="font-weight: normal;">Left Arm (앞뒤) <span id="val_la_x">0</span></label>
-            <input type="range" id="la_x" min="-180" max="180" value="0" oninput="updatePose()">
+            <label>Output Resolution</label>
+            <div class="row-buttons">
+                <button id="btnRes1080" class="active" onclick="setResolution(1080)">1080p</button>
+                <button id="btnRes720" onclick="setResolution(720)">720p</button>
+                <button id="btnRes540" onclick="setResolution(540)">540p</button>
+            </div>
         </div>
 
-        <button onclick="downloadPNG()" style="background: #10b981; margin-top: 10px; font-size: 16px;">⬇ Download PNG (1080p)</button>
+        <button id="btnDownload" onclick="downloadPNG()" style="background: #10b981; margin-top: 5px; font-size: 16px;">⬇ Download PNG (1080p)</button>
     </div>
 
     <div id="viewer-container">
@@ -81,17 +84,19 @@
 
     <script>
         let scene, camera, renderer, controls, currentModel;
-        const OUTPUT_SIZE = 1080; 
+        let OUTPUT_SIZE = 1080; 
         
         function init() {
             scene = new THREE.Scene();
             camera = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
+            
             renderer = new THREE.WebGLRenderer({ preserveDrawingBuffer: true, alpha: true, antialias: true });
             renderer.setSize(OUTPUT_SIZE, OUTPUT_SIZE);
             renderer.setPixelRatio(1); 
             renderer.setClearColor(0x000000, 0); 
             document.getElementById('viewer').appendChild(renderer.domElement);
 
+            // 빛 셋업
             scene.add(new THREE.AmbientLight(0xffffff, 0.8));
             const dirLight = new THREE.DirectionalLight(0xffffff, 0.6);
             dirLight.position.set(5, 10, 10);
@@ -106,19 +111,16 @@
 
         function loadModel() {
             try {
-                // n8n 원본 JSON (textureUrls 배열이 있는 버전)
                 const data = JSON.parse(document.getElementById('jsonInput').value)[0];
                 if(currentModel) scene.remove(currentModel);
 
                 const textureMap = {};
-                if(data.textureUrls) {
-                    data.textureUrls.forEach(url => {
-                        const hash = url.split('/').pop(); 
-                        const pureHash = hash.replace('30DAY-', '').replace('7DAY-', ''); 
-                        textureMap[hash] = url;
-                        textureMap[pureHash] = url; 
-                    });
-                }
+                data.textureUrls.forEach(url => {
+                    const hash = url.split('/').pop(); 
+                    const pureHash = hash.replace('30DAY-', '').replace('7DAY-', ''); 
+                    textureMap[hash] = url;
+                    textureMap[pureHash] = url; 
+                });
 
                 const manager = new THREE.LoadingManager();
                 manager.setURLModifier((url) => {
@@ -150,73 +152,27 @@
                     const objLoader = new THREE.OBJLoader(manager);
                     objLoader.setMaterials(materials);
                     objLoader.load(data.objUrl, (object) => {
-                        currentModel = object;
-
+                        
+                        // 🌟 중앙 정렬 및 스케일 버그 해결 로직 🌟
                         const box = new THREE.Box3().setFromObject(object);
                         const center = box.getCenter(new THREE.Vector3());
-                        const size = box.getSize(new THREE.Vector3());
-
-                        object.position.x += (object.position.x - center.x);
-                        object.position.y += (object.position.y - center.y);
-                        object.position.z += (object.position.z - center.z);
+                        
+                        // 1. 오브젝트를 완벽히 0,0,0 좌표의 중심으로 이동
+                        object.position.set(-center.x, -center.y, -center.z);
                         object.rotation.y = Math.PI;
 
-                        // 🌟 [최강의 얼굴 복원 로직] 브라우저 단에서 불량 픽셀 검사 🌟
-                        const defaultFaceUrl = 'https://tr.roproxy.com/38c3749746e5ba2b10a21069b2d86f7b/420/420/Decal/Png';
-                        const texLoader = new THREE.TextureLoader();
-                        texLoader.setCrossOrigin('anonymous');
+                        // 2. 오브젝트를 투명한 그룹(Wrapper)으로 감싸기 (스케일 조절 시 제자리에 있게 함)
+                        currentModel = new THREE.Group();
+                        currentModel.add(object);
+                        scene.add(currentModel);
                         
-                        texLoader.load(defaultFaceUrl, (defaultFaceTexture) => {
-                            if (defaultFaceTexture.colorSpace !== undefined) defaultFaceTexture.colorSpace = THREE.SRGBColorSpace;
-                            
-                            object.traverse((child) => {
-                                if (child.isMesh) {
-                                    const mats = Array.isArray(child.material) ? child.material : [child.material];
-                                    mats.forEach(mat => {
-                                        // 1. 텍스처가 있는 파츠 (옷, 안경, 얼굴 등)
-                                        if (mat.map && mat.map.image) {
-                                            const img = mat.map.image;
-                                            
-                                            // 이미지 로딩 완료 후 해상도를 검사하는 함수
-                                            const checkSizeAndReplace = () => {
-                                                const w = img.naturalWidth || img.width;
-                                                // 4x4, 8x8 같은 찌그러진 더미 파일 감지!
-                                                if (w > 0 && w <= 8) {
-                                                    console.log(`불량 텍스처 감지(${w}px)! 스마일 표정으로 자동 교체합니다.`);
-                                                    mat.map = defaultFaceTexture;
-                                                    mat.transparent = true;
-                                                    mat.alphaTest = 0.5;
-                                                    mat.color.setHex(0xffffff);
-                                                    mat.needsUpdate = true;
-                                                }
-                                            };
+                        // 카메라 기본 거리를 모델 사이즈에 비례하여 저장해둠
+                        const size = box.getSize(new THREE.Vector3());
+                        camera.userData.baseDist = Math.max(size.x, size.y, size.z) * 1.5;
 
-                                            // 이미지가 이미 로드되었으면 즉시 검사, 아니면 로드 완료 이벤트 기다림
-                                            if (img.complete) checkSizeAndReplace();
-                                            else img.addEventListener('load', checkSizeAndReplace);
-                                        } 
-                                        // 2. 아예 텍스처가 안 들어온 머리 파츠
-                                        else if (mat.name.toLowerCase().includes('head') && !mat.map) {
-                                            console.log("얼굴 텍스처 완전 누락! 스마일 표정으로 자동 교체합니다.");
-                                            mat.map = defaultFaceTexture;
-                                            mat.transparent = true;
-                                            mat.alphaTest = 0.5;
-                                            mat.color.setHex(0xffffff);
-                                            mat.needsUpdate = true;
-                                        }
-                                    });
-                                }
-                            });
-                        });
-
-                        scene.add(object);
-                        
-                        const maxDim = Math.max(size.x, size.y, size.z);
-                        camera.position.set(0, 0, maxDim * 1.5);
-                        camera.lookAt(0, 0, 0);
-
-                        resetSliders();
-                        updateScale(); 
+                        // 로드 완료 시 기본값 세팅
+                        setScale(100);
+                        setCameraAngle('front'); 
                     });
                 });
             } catch (e) {
@@ -225,41 +181,50 @@
             }
         }
 
-        function updateScale() {
+        // --- 기능 제어 함수들 ---
+
+        function setScale(percent) {
+            // UI 버튼 갱신
+            [100, 75, 50, 25].forEach(val => {
+                document.getElementById('btnScale' + val).className = (val === percent) ? 'active' : '';
+            });
+
             if (!currentModel) return;
-            const scaleVal = document.getElementById('model_scale').value / 100;
-            currentModel.scale.set(scaleVal, scaleVal, scaleVal);
-            document.getElementById('val_scale').innerText = document.getElementById('model_scale').value;
+            const s = percent / 100;
+            currentModel.scale.set(s, s, s); // 그룹(Wrapper)의 스케일을 줄이므로 제자리에서 작아짐
         }
 
-        function setCameraAngle(type) {
-            if (!currentModel) return;
-            const box = new THREE.Box3().setFromObject(currentModel);
-            const size = box.getSize(new THREE.Vector3());
-            const dist = Math.max(size.x, size.y, size.z) * 1.5;
+        function setCameraAngle(angle) {
+            // UI 버튼 갱신
+            ['front', 30, 45, 60].forEach(val => {
+                const btnId = val === 'front' ? 'btnAngleFront' : 'btnAngle' + val;
+                document.getElementById(btnId).className = (val === angle) ? 'active' : '';
+            });
 
-            if (type === 'front') camera.position.set(0, 0, dist);
-            else if (type === 'right30') camera.position.set(Math.sin(-30 * Math.PI / 180) * dist, 0, Math.cos(-30 * Math.PI / 180) * dist);
-            
+            if (!currentModel || !camera.userData.baseDist) return;
+            const dist = camera.userData.baseDist;
+
+            if (angle === 'front') {
+                camera.position.set(0, 0, dist);
+            } else {
+                const rad = -angle * Math.PI / 180; // 우측 측면이 보이게 카메라를 좌측으로 이동
+                camera.position.set(Math.sin(rad) * dist, 0, Math.cos(rad) * dist);
+            }
             camera.lookAt(0, 0, 0);
             if (controls) controls.update();
         }
 
-        function updatePose() {
-            if (!currentModel) return;
-            const r = id => document.getElementById(id).value * (Math.PI / 180);
-            const rightArm = currentModel.getObjectByName('RightArm') || currentModel.getObjectByName('RightUpperArm');
-            const leftArm = currentModel.getObjectByName('LeftArm') || currentModel.getObjectByName('LeftUpperArm');
-
-            if (rightArm) { rightArm.rotation.x = -r('ra_x'); rightArm.rotation.z = -r('ra_z'); }
-            if (leftArm) { leftArm.rotation.x = -la_x; leftArm.rotation.z = r('la_z'); }
-        }
-
-        function resetSliders() {
-            document.querySelectorAll('input[type="range"]').forEach(slider => {
-                if(slider.id !== 'model_scale') slider.value = 0;
+        function setResolution(res) {
+            OUTPUT_SIZE = res;
+            
+            // UI 버튼 갱신
+            [1080, 720, 540].forEach(val => {
+                document.getElementById('btnRes' + val).className = (val === res) ? 'active' : '';
             });
-            updatePose();
+
+            // 내부 렌더러 사이즈 변경 (화면 비율은 CSS로 고정되어 있으므로 출력본 해상도만 바뀜)
+            renderer.setSize(OUTPUT_SIZE, OUTPUT_SIZE);
+            document.getElementById('btnDownload').innerText = `⬇ Download PNG (${res}p)`;
         }
 
         function setBackground(type) {
@@ -271,12 +236,17 @@
         function downloadPNG() {
             renderer.render(scene, camera);
             const link = document.createElement('a');
-            link.download = 'roblox_avatar_1080p.png';
+            link.download = `roblox_avatar_${OUTPUT_SIZE}p.png`;
             link.href = renderer.domElement.toDataURL("image/png");
             link.click();
         }
 
-        function animate() { requestAnimationFrame(animate); if(controls) controls.update(); renderer.render(scene, camera); }
+        function animate() {
+            requestAnimationFrame(animate);
+            if(controls) controls.update();
+            renderer.render(scene, camera);
+        }
+
         init();
     </script>
 </body>
