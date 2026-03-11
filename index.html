@@ -2,16 +2,12 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>Roblox Avatar Studio (DevForum Fixed)</title>
+    <title>Roblox Avatar Studio (PiratePeep Core)</title>
     <style>
         body { margin: 0; display: flex; background: #1e2128; color: #cbd5e1; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; overflow: hidden; height: 100vh; }
         #sidebar { width: 350px; background: #0f172a; padding: 20px; overflow-y: auto; height: 100%; box-sizing: border-box; flex-shrink: 0; }
-        
         #viewer-container { flex-grow: 1; display: flex; justify-content: center; align-items: center; background: #111; padding: 20px; box-sizing: border-box; }
-        #viewer { 
-            width: 100%; max-width: 80vh; aspect-ratio: 1 / 1; 
-            box-shadow: 0 10px 30px rgba(0,0,0,0.5); background: #000;
-        }
+        #viewer { width: 100%; max-width: 80vh; aspect-ratio: 1 / 1; box-shadow: 0 10px 30px rgba(0,0,0,0.5); background: #000; }
         #viewer canvas { width: 100% !important; height: 100% !important; } 
 
         textarea { width: 100%; height: 60px; background: #1e293b; color: white; border: 1px solid #334155; padding: 10px; border-radius: 5px; box-sizing: border-box; margin-bottom: 10px;}
@@ -52,26 +48,26 @@
         </div>
 
         <div class="control-group">
-            <label>Camera Angle (앵글 조절)</label>
+            <label>Camera Angle</label>
             <div class="row-buttons">
                 <button onclick="setCameraAngle('front')">Front (정면)</button>
-                <button onclick="setCameraAngle('right30')">Right 30° (우측면)</button>
+                <button onclick="setCameraAngle('right30')">Right 30°</button>
             </div>
         </div>
 
         <div class="control-group" style="border-bottom: none;">
-            <label>POSE CONTROL (포즈 조절)</label>
-            <label style="font-weight: normal;">Right Arm (상하 올리기) <span id="val_ra_z">0</span></label>
+            <label>POSE CONTROL</label>
+            <label style="font-weight: normal;">Right Arm (상하) <span id="val_ra_z">0</span></label>
             <input type="range" id="ra_z" min="-180" max="180" value="0" oninput="updatePose()">
-            <label style="font-weight: normal;">Right Arm (앞뒤 뻗기) <span id="val_ra_x">0</span></label>
+            <label style="font-weight: normal;">Right Arm (앞뒤) <span id="val_ra_x">0</span></label>
             <input type="range" id="ra_x" min="-180" max="180" value="0" oninput="updatePose()">
-            <label style="font-weight: normal;">Left Arm (상하 올리기) <span id="val_la_z">0</span></label>
+            <label style="font-weight: normal;">Left Arm (상하) <span id="val_la_z">0</span></label>
             <input type="range" id="la_z" min="-180" max="180" value="0" oninput="updatePose()">
-            <label style="font-weight: normal;">Left Arm (앞뒤 뻗기) <span id="val_la_x">0</span></label>
+            <label style="font-weight: normal;">Left Arm (앞뒤) <span id="val_la_x">0</span></label>
             <input type="range" id="la_x" min="-180" max="180" value="0" oninput="updatePose()">
         </div>
 
-        <button onclick="downloadPNG()" style="background: #10b981; margin-top: 10px; font-size: 16px;">⬇ Download PNG (1080x1080)</button>
+        <button onclick="downloadPNG()" style="background: #10b981; margin-top: 10px; font-size: 16px;">⬇ Download PNG (1080p)</button>
     </div>
 
     <div id="viewer-container">
@@ -86,17 +82,7 @@
     <script>
         let scene, camera, renderer, controls, currentModel;
         const OUTPUT_SIZE = 1080; 
-        const CAMERA_DIST = 12;   
         
-        // 🌟 [핵심 1] 데브포럼의 CDN 해시 계산 알고리즘 적용
-        function getRobloxCdnUrl(hash) {
-            let i = 31;
-            for (let t = 0; t < hash.length; t++) {
-                i ^= hash.charCodeAt(t);
-            }
-            return `https://t${i % 8}.rbxcdn.com/${hash}`;
-        }
-
         function init() {
             scene = new THREE.Scene();
             camera = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
@@ -107,17 +93,16 @@
             renderer.setClearColor(0x000000, 0); 
             document.getElementById('viewer').appendChild(renderer.domElement);
 
-            // 조명 설정
-            scene.add(new THREE.AmbientLight(0xffffff, 0.9));
-            const dirLight = new THREE.DirectionalLight(0xffffff, 0.6);
-            dirLight.position.set(5, 10, 10);
+            // PiratePeep 스타일 조명 (AmbientLight 강하게, DirectionalLight 부드럽게)
+            scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.5);
+            dirLight.position.set(5, 5, 5);
             scene.add(dirLight);
 
             controls = new THREE.OrbitControls(camera, renderer.domElement);
             controls.enableDamping = true;
             controls.target.set(0, 0, 0);
 
-            setCameraAngle('front'); 
             animate();
         }
 
@@ -126,13 +111,17 @@
                 const data = JSON.parse(document.getElementById('jsonInput').value)[0];
                 if(currentModel) scene.remove(currentModel);
 
+                const textureMap = {};
+                data.textureUrls.forEach(url => {
+                    const hash = url.split('/').pop();
+                    textureMap[hash] = url;
+                    textureMap[hash.replace('30DAY-', '')] = url;
+                });
+
                 const manager = new THREE.LoadingManager();
-                
-                // 🌟 [핵심 2] MTL 파일이 요구하는 텍스처 URL을 가로채서 올바른 CDN으로 변환
                 manager.setURLModifier((url) => {
-                    if (url.includes('rbxcdn.com')) {
-                        const hash = url.split('/').pop(); // '30DAY-...' 해시만 추출
-                        return getRobloxCdnUrl(hash);      // 올바른 서버 계산해서 리턴
+                    for (const key in textureMap) {
+                        if (url.includes(key)) return textureMap[key];
                     }
                     return url;
                 });
@@ -142,12 +131,27 @@
                 mtlLoader.load(data.mtlUrl, (materials) => {
                     materials.preload();
                     
-                    // 🌟 [핵심 3] 데브포럼의 렌더링 해결책 적용 (유령화 방지)
+                    // 🌟 [PiratePeep 핵심 로직 이식] 🌟
                     for (const key in materials.materials) {
                         const mat = materials.materials[key];
-                        mat.transparent = false; // 절대 투명해지지 않게 강제 설정
-                        mat.alphaTest = 0.5;     // 머리카락, 안경 등 구멍 뚫린 부분만 오려냄 (검은색 덩어리 방지)
-                        mat.color.setHex(0xffffff); // 로블록스의 기본 어두운 톤 제거
+                        
+                        // 1. 텍스처 맵이 있는 경우만 투명도 켜기
+                        if (mat.map) {
+                            mat.transparent = true;
+                            mat.alphaTest = 0.5; // 배경 구멍 오려내기
+                        } else {
+                            mat.transparent = false; // 피부/맨살은 절대 투명해지지 않게
+                        }
+                        
+                        // 2. 로블록스 알파 맵 렌더링 꼬임 방지 (강제 삭제)
+                        mat.alphaMap = null;
+                        
+                        // 3. 렌더링 겹침(Z-fighting) 방지
+                        mat.depthWrite = true;
+                        mat.side = THREE.DoubleSide;
+                        
+                        // 4. 원래 텍스처 색상 복원
+                        mat.color.setHex(0xffffff); 
                     }
 
                     const objLoader = new THREE.OBJLoader(manager);
@@ -155,19 +159,28 @@
                     objLoader.load(data.objUrl, (object) => {
                         currentModel = object;
 
-                        // 모델 중앙 정렬
+                        // 🌟 [PiratePeep 카메라 중앙 정렬 로직 이식] 🌟
                         const box = new THREE.Box3().setFromObject(object);
-                        const centerY = (box.min.y + box.max.y) / 2;
-                        object.position.set(0, -centerY, 0); 
+                        const center = box.getCenter(new THREE.Vector3());
+                        const size = box.getSize(new THREE.Vector3());
+
+                        // 모델의 중심점을 (0,0,0)으로 이동
+                        object.position.x += (object.position.x - center.x);
+                        object.position.y += (object.position.y - center.y);
+                        object.position.z += (object.position.z - center.z);
                         
-                        // 등짝 대신 정면을 보도록 180도 회전
+                        // 기본 후면을 보고 있으므로 정면으로 돌림
                         object.rotation.y = Math.PI;
 
                         scene.add(object);
                         
+                        // 카메라를 모델 크기에 비례하여 자동으로 뒤로 뺌 (약 1.5배 거리)
+                        const maxDim = Math.max(size.x, size.y, size.z);
+                        camera.position.set(0, 0, maxDim * 1.5);
+                        camera.lookAt(0, 0, 0);
+
                         resetSliders();
                         updateScale(); 
-                        setCameraAngle('front'); 
                     });
                 });
             } catch (e) {
@@ -184,17 +197,23 @@
         }
 
         function setCameraAngle(type) {
+            if (!currentModel) return;
+            
+            // 모델 크기에 비례한 카메라 거리 계산
+            const box = new THREE.Box3().setFromObject(currentModel);
+            const size = box.getSize(new THREE.Vector3());
+            const dist = Math.max(size.x, size.y, size.z) * 1.5;
+
             if (type === 'front') {
-                camera.position.set(0, 0, CAMERA_DIST);
+                camera.position.set(0, 0, dist);
             } else if (type === 'right30') {
                 const rad = -30 * Math.PI / 180; 
-                camera.position.set(Math.sin(rad) * CAMERA_DIST, 0, Math.cos(rad) * CAMERA_DIST);
+                camera.position.set(Math.sin(rad) * dist, 0, Math.cos(rad) * dist);
             }
             camera.lookAt(0, 0, 0);
-            if (controls) controls.update();
+            controls.update();
         }
 
-        // 포즈(관절) 조절 로직
         function updatePose() {
             if (!currentModel) return;
 
