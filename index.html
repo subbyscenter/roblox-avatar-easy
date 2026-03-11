@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>Roblox Avatar Studio (Stable Release)</title>
+    <title>Roblox Avatar Studio (Stable + Auto Face Fix)</title>
     <style>
         body { margin: 0; display: flex; background: #1e2128; color: #cbd5e1; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; overflow: hidden; height: 100vh; }
         #sidebar { width: 350px; background: #0f172a; padding: 20px; overflow-y: auto; height: 100%; box-sizing: border-box; flex-shrink: 0; }
@@ -93,7 +93,6 @@
             renderer.setClearColor(0x000000, 0); 
             document.getElementById('viewer').appendChild(renderer.domElement);
 
-            // 얼굴/피부 발색을 위한 조명 셋업
             scene.add(new THREE.AmbientLight(0xffffff, 0.8));
             const dirLight = new THREE.DirectionalLight(0xffffff, 0.6);
             dirLight.position.set(5, 10, 10);
@@ -111,13 +110,12 @@
                 const data = JSON.parse(document.getElementById('jsonInput').value)[0];
                 if(currentModel) scene.remove(currentModel);
 
-                // 🌟 [핵심] 가장 안전한 텍스처 매핑 (에러 원천 차단)
                 const textureMap = {};
                 data.textureUrls.forEach(url => {
-                    const hash = url.split('/').pop(); // 예: 30DAY-abc1234
-                    const pureHash = hash.replace('30DAY-', '').replace('7DAY-', ''); // 예: abc1234
+                    const hash = url.split('/').pop(); 
+                    const pureHash = hash.replace('30DAY-', '').replace('7DAY-', ''); 
                     textureMap[hash] = url;
-                    textureMap[pureHash] = url; // MTL 파일이 30DAY-를 빼고 요청할 때를 대비
+                    textureMap[pureHash] = url; 
                 });
 
                 const manager = new THREE.LoadingManager();
@@ -125,7 +123,7 @@
                     for (const key in textureMap) {
                         if (url.includes(key)) return textureMap[key];
                     }
-                    return url; // n8n 데이터에 없으면 원래 URL 그대로 반환 (에러 방지)
+                    return url; 
                 });
 
                 const mtlLoader = new THREE.MTLLoader(manager);
@@ -133,22 +131,19 @@
                 mtlLoader.load(data.mtlUrl, (materials) => {
                     materials.preload();
                     
-                    // 🌟 유령 현상 방지 + 얼굴 복구 로직 (에러 없음 보장)
                     for (const key in materials.materials) {
                         const mat = materials.materials[key];
-                        
-                        // 텍스처 맵이 있는 경우에만 투명도 허용 (안경, 옷 등)
                         if (mat.map) {
                             mat.transparent = true;
-                            mat.alphaTest = 0.5; // 투명한 픽셀 오려내기
+                            mat.alphaTest = 0.5; 
                         } else {
-                            mat.transparent = false; // 맨살, 기본 머리통은 절대 투명해지지 않게
+                            mat.transparent = false; 
                         }
                         
-                        mat.alphaMap = null; // 로블록스의 이상한 알파 맵 렌더링 꼬임 방지
-                        mat.depthWrite = true; // 렌더링 겹침(유령) 방지
-                        mat.side = THREE.DoubleSide; // 옷 안쪽 투명 방지
-                        mat.color.setHex(0xffffff); // 얼굴색이 까맣게 나오는 것 방지 (흰색 베이스로 텍스처 출력)
+                        mat.alphaMap = null; 
+                        mat.depthWrite = true; 
+                        mat.side = THREE.DoubleSide; 
+                        mat.color.setHex(0xffffff); 
                     }
 
                     const objLoader = new THREE.OBJLoader(manager);
@@ -156,7 +151,6 @@
                     objLoader.load(data.objUrl, (object) => {
                         currentModel = object;
 
-                        // 모델 중앙 정렬 및 180도 회전
                         const box = new THREE.Box3().setFromObject(object);
                         const center = box.getCenter(new THREE.Vector3());
                         const size = box.getSize(new THREE.Vector3());
@@ -164,12 +158,57 @@
                         object.position.x += (object.position.x - center.x);
                         object.position.y += (object.position.y - center.y);
                         object.position.z += (object.position.z - center.z);
-                        
                         object.rotation.y = Math.PI;
+
+                        // 🌟 [핵심] 불량 텍스처(4x4) 감지 및 기본 얼굴(스마일) 자동 교체 🌟
+                        const defaultFaceUrl = 'https://tr.roproxy.com/38c3749746e5ba2b10a21069b2d86f7b/420/420/Decal/Png';
+                        const texLoader = new THREE.TextureLoader();
+                        texLoader.setCrossOrigin('anonymous');
+                        
+                        texLoader.load(defaultFaceUrl, (defaultFaceTexture) => {
+                            if (defaultFaceTexture.colorSpace !== undefined) {
+                                defaultFaceTexture.colorSpace = THREE.SRGBColorSpace;
+                            }
+
+                            object.traverse((child) => {
+                                if (child.isMesh) {
+                                    const mats = Array.isArray(child.material) ? child.material : [child.material];
+                                    
+                                    mats.forEach(mat => {
+                                        // 1. 텍스처가 있는 경우: 해상도(width/height)가 8픽셀 이하인 불량 파일인지 검사
+                                        if (mat.map && mat.map.image) {
+                                            const checkSize = () => {
+                                                const w = mat.map.image.width || mat.map.image.naturalWidth || 0;
+                                                // 4x4 같은 더미 파일 감지 시 기본 표정으로 교체
+                                                if (w > 0 && w <= 8) {
+                                                    console.log(`불량 텍스처 감지됨 (${w}px). 스마일 표정으로 교체합니다.`);
+                                                    mat.map = defaultFaceTexture;
+                                                    mat.transparent = true;
+                                                    mat.alphaTest = 0.5;
+                                                    mat.color.setHex(0xffffff);
+                                                    mat.needsUpdate = true;
+                                                }
+                                            };
+                                            // 텍스처 로딩이 이미 끝났으면 즉시 검사, 아니면 로드 완료 시 검사
+                                            if (mat.map.image.complete) checkSize();
+                                            else mat.map.image.addEventListener('load', checkSize);
+                                        } 
+                                        // 2. 텍스처가 아예 없는 경우: 머리(Head) 파츠인데 비어있으면 교체
+                                        else if (mat.name.toLowerCase().includes('head') && !mat.map) {
+                                            console.log("얼굴 텍스처 누락 감지! 스마일 표정으로 교체합니다.");
+                                            mat.map = defaultFaceTexture;
+                                            mat.transparent = true;
+                                            mat.alphaTest = 0.5;
+                                            mat.color.setHex(0xffffff);
+                                            mat.needsUpdate = true;
+                                        }
+                                    });
+                                }
+                            });
+                        });
 
                         scene.add(object);
                         
-                        // 카메라를 모델 크기에 비례하여 자동 배치
                         const maxDim = Math.max(size.x, size.y, size.z);
                         camera.position.set(0, 0, maxDim * 1.5);
                         camera.lookAt(0, 0, 0);
@@ -265,5 +304,3 @@
     </script>
 </body>
 </html>
-
-
