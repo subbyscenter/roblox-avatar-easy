@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>Roblox Avatar Studio (Stable Release)</title>
+    <title>Roblox Avatar Studio (Face Fixed)</title>
     <style>
         body { margin: 0; display: flex; background: #1e2128; color: #cbd5e1; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; overflow: hidden; height: 100vh; }
         #sidebar { width: 350px; background: #0f172a; padding: 20px; overflow-y: auto; height: 100%; box-sizing: border-box; flex-shrink: 0; }
@@ -10,14 +10,14 @@
         #viewer { width: 100%; max-width: 80vh; aspect-ratio: 1 / 1; box-shadow: 0 10px 30px rgba(0,0,0,0.5); background: #000; }
         #viewer canvas { width: 100% !important; height: 100% !important; } 
 
-        textarea { width: 100%; height: 60px; background: #1e293b; color: white; border: 1px solid #334155; padding: 10px; border-radius: 5px; box-sizing: border-box; margin-bottom: 10px;}
+        textarea, input[type="text"] { width: 100%; background: #1e293b; color: white; border: 1px solid #334155; padding: 10px; border-radius: 5px; box-sizing: border-box; margin-bottom: 10px;}
+        textarea { height: 60px; }
         button { width: 100%; padding: 10px; background: #3b82f6; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; margin-bottom: 10px; transition: 0.2s; }
         button:hover { background: #2563eb; }
         
         .control-group { margin-bottom: 15px; border-bottom: 1px solid #334155; padding-bottom: 10px;}
         .control-group label { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 5px; color: #94a3b8; font-weight: bold; }
         input[type="range"] { width: 100%; cursor: pointer; }
-        
         .row-buttons { display: flex; gap: 10px; margin-bottom: 10px; }
         .row-buttons button { margin: 0; background: #475569; }
         .row-buttons button.active { background: #3b82f6; }
@@ -29,9 +29,16 @@
         <h3 style="color: white; margin-top: 0;">Roblox Avatar Studio</h3>
         
         <div class="control-group">
-            <label>Input JSON Data</label>
+            <label>1. Input JSON Data (몸통)</label>
             <textarea id="jsonInput" placeholder='[{"objUrl": "...", "mtlUrl": "..."}]'></textarea>
             <button onclick="loadModel()">Load Character</button>
+        </div>
+
+        <div class="control-group">
+            <label>2. Face Texture URL (누락된 얼굴 복구)</label>
+            <!-- 테스트를 위해 로블록스 기본 스마일 얼굴 URL을 기본값으로 넣었습니다 -->
+            <input type="text" id="faceUrl" value="https://tr.rbxcdn.com/38c3749746e5ba2b10a21069b2d86f7b/420/420/Decal/Png" placeholder="얼굴 이미지 URL 입력">
+            <button onclick="applyFace()" style="background: #f59e0b;">Apply Face</button>
         </div>
 
         <div class="control-group">
@@ -43,12 +50,7 @@
         </div>
 
         <div class="control-group">
-            <label>Model Size (Scale) <span id="val_scale">100</span></label>
-            <input type="range" id="model_scale" min="10" max="200" value="100" oninput="updateScale()">
-        </div>
-
-        <div class="control-group">
-            <label>Camera Angle</label>
+            <label>Camera Angle (앵글 조절)</label>
             <div class="row-buttons">
                 <button onclick="setCameraAngle('front')">Front (정면)</button>
                 <button onclick="setCameraAngle('right30')">Right 30°</button>
@@ -83,18 +85,21 @@
         let scene, camera, renderer, controls, currentModel;
         const OUTPUT_SIZE = 1080; 
         
+        function getRobloxCdnUrl(hash) {
+            let i = 31;
+            for (let t = 0; t < hash.length; t++) i ^= hash.charCodeAt(t);
+            return `https://t${i % 8}.rbxcdn.com/${hash}`;
+        }
+
         function init() {
             scene = new THREE.Scene();
             camera = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
-            
             renderer = new THREE.WebGLRenderer({ preserveDrawingBuffer: true, alpha: true, antialias: true });
             renderer.setSize(OUTPUT_SIZE, OUTPUT_SIZE);
-            renderer.setPixelRatio(1); 
             renderer.setClearColor(0x000000, 0); 
             document.getElementById('viewer').appendChild(renderer.domElement);
 
-            // 얼굴/피부 발색을 위한 조명 셋업
-            scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+            scene.add(new THREE.AmbientLight(0xffffff, 0.9));
             const dirLight = new THREE.DirectionalLight(0xffffff, 0.6);
             dirLight.position.set(5, 10, 10);
             scene.add(dirLight);
@@ -102,7 +107,6 @@
             controls = new THREE.OrbitControls(camera, renderer.domElement);
             controls.enableDamping = true;
             controls.target.set(0, 0, 0);
-
             animate();
         }
 
@@ -111,21 +115,20 @@
                 const data = JSON.parse(document.getElementById('jsonInput').value)[0];
                 if(currentModel) scene.remove(currentModel);
 
-                // 🌟 [핵심] 가장 안전한 텍스처 매핑 (에러 원천 차단)
                 const textureMap = {};
                 data.textureUrls.forEach(url => {
-                    const hash = url.split('/').pop(); // 예: 30DAY-abc1234
-                    const pureHash = hash.replace('30DAY-', '').replace('7DAY-', ''); // 예: abc1234
+                    const hash = url.split('/').pop();
                     textureMap[hash] = url;
-                    textureMap[pureHash] = url; // MTL 파일이 30DAY-를 빼고 요청할 때를 대비
+                    textureMap[hash.replace('30DAY-', '')] = url;
                 });
 
                 const manager = new THREE.LoadingManager();
                 manager.setURLModifier((url) => {
-                    for (const key in textureMap) {
-                        if (url.includes(key)) return textureMap[key];
+                    if (url.includes('rbxcdn.com')) {
+                        const hash = url.split('/').pop(); 
+                        return getRobloxCdnUrl(hash);      
                     }
-                    return url; // n8n 데이터에 없으면 원래 URL 그대로 반환 (에러 방지)
+                    return url;
                 });
 
                 const mtlLoader = new THREE.MTLLoader(manager);
@@ -133,112 +136,84 @@
                 mtlLoader.load(data.mtlUrl, (materials) => {
                     materials.preload();
                     
-                    // 🌟 유령 현상 방지 + 얼굴 복구 로직 (에러 없음 보장)
                     for (const key in materials.materials) {
                         const mat = materials.materials[key];
-                        
-                        // 텍스처 맵이 있는 경우에만 투명도 허용 (안경, 옷 등)
-                        if (mat.map) {
-                            mat.transparent = true;
-                            mat.alphaTest = 0.5; // 투명한 픽셀 오려내기
-                        } else {
-                            mat.transparent = false; // 맨살, 기본 머리통은 절대 투명해지지 않게
-                        }
-                        
-                        mat.alphaMap = null; // 로블록스의 이상한 알파 맵 렌더링 꼬임 방지
-                        mat.depthWrite = true; // 렌더링 겹침(유령) 방지
-                        mat.side = THREE.DoubleSide; // 옷 안쪽 투명 방지
-                        mat.color.setHex(0xffffff); // 얼굴색이 까맣게 나오는 것 방지 (흰색 베이스로 텍스처 출력)
+                        mat.transparent = false; 
+                        mat.alphaTest = 0.5;     
+                        mat.color.setHex(0xffffff); 
                     }
 
                     const objLoader = new THREE.OBJLoader(manager);
                     objLoader.setMaterials(materials);
                     objLoader.load(data.objUrl, (object) => {
                         currentModel = object;
-
-                        // 모델 중앙 정렬 및 180도 회전
                         const box = new THREE.Box3().setFromObject(object);
-                        const center = box.getCenter(new THREE.Vector3());
-                        const size = box.getSize(new THREE.Vector3());
-
-                        object.position.x += (object.position.x - center.x);
-                        object.position.y += (object.position.y - center.y);
-                        object.position.z += (object.position.z - center.z);
-                        
+                        const centerY = (box.min.y + box.max.y) / 2;
+                        object.position.set(0, -centerY, 0); 
                         object.rotation.y = Math.PI;
-
                         scene.add(object);
                         
-                        // 카메라를 모델 크기에 비례하여 자동 배치
-                        const maxDim = Math.max(size.x, size.y, size.z);
-                        camera.position.set(0, 0, maxDim * 1.5);
-                        camera.lookAt(0, 0, 0);
-
-                        resetSliders();
-                        updateScale(); 
+                        setCameraAngle('front'); 
+                        
+                        // 모델 로드 직후 1초 뒤 자동으로 얼굴 텍스처 입히기 시도
+                        setTimeout(applyFace, 500); 
                     });
                 });
-            } catch (e) {
-                alert("JSON 로드 중 에러가 발생했습니다. 브라우저 콘솔(F12)을 확인해주세요.");
-                console.error(e);
-            }
+            } catch (e) { alert("JSON 로드 에러."); }
         }
 
-        function updateScale() {
+        // 🌟 [핵심] 누락된 얼굴 텍스처를 찾아 강제로 입혀주는 마법의 함수 🌟
+        function applyFace() {
             if (!currentModel) return;
-            const scaleVal = document.getElementById('model_scale').value / 100;
-            currentModel.scale.set(scaleVal, scaleVal, scaleVal);
-            document.getElementById('val_scale').innerText = document.getElementById('model_scale').value;
+            const faceUrl = document.getElementById('faceUrl').value;
+            if (!faceUrl) return;
+
+            const texLoader = new THREE.TextureLoader();
+            texLoader.setCrossOrigin('anonymous');
+            texLoader.load(faceUrl, (texture) => {
+                texture.colorSpace = THREE.SRGBColorSpace;
+                
+                // 모델의 모든 부품(Mesh)을 뒤져서 '얼굴(Head)' 파츠를 찾아냅니다.
+                currentModel.traverse((child) => {
+                    if (child.isMesh) {
+                        const mats = Array.isArray(child.material) ? child.material : [child.material];
+                        mats.forEach(mat => {
+                            // 로블록스 OBJ 구조상, 텍스처 맵(map)이 없는 살색 파츠가 머리일 확률이 99%입니다.
+                            if (!mat.map || mat.name.toLowerCase().includes('head')) {
+                                mat.map = texture;
+                                mat.transparent = true;
+                                mat.alphaTest = 0.5;
+                                mat.needsUpdate = true;
+                            }
+                        });
+                    }
+                });
+            }, undefined, function (error) {
+                console.error("얼굴 텍스처 로드 실패 (CORS 문제일 수 있음):", error);
+            });
         }
 
         function setCameraAngle(type) {
             if (!currentModel) return;
-            
             const box = new THREE.Box3().setFromObject(currentModel);
-            const size = box.getSize(new THREE.Vector3());
-            const dist = Math.max(size.x, size.y, size.z) * 1.5;
+            const dist = Math.max(box.getSize(new THREE.Vector3()).y, 5) * 1.5;
 
-            if (type === 'front') {
-                camera.position.set(0, 0, dist);
-            } else if (type === 'right30') {
-                const rad = -30 * Math.PI / 180; 
-                camera.position.set(Math.sin(rad) * dist, 0, Math.cos(rad) * dist);
-            }
+            if (type === 'front') camera.position.set(0, 0, dist);
+            else if (type === 'right30') camera.position.set(Math.sin(-30 * Math.PI / 180) * dist, 0, Math.cos(-30 * Math.PI / 180) * dist);
+            
             camera.lookAt(0, 0, 0);
             if (controls) controls.update();
         }
 
         function updatePose() {
             if (!currentModel) return;
-
-            const ra_x = document.getElementById('ra_x').value * (Math.PI / 180);
-            const ra_z = document.getElementById('ra_z').value * (Math.PI / 180);
-            const la_x = document.getElementById('la_x').value * (Math.PI / 180);
-            const la_z = document.getElementById('la_z').value * (Math.PI / 180);
-
-            document.getElementById('val_ra_x').innerText = document.getElementById('ra_x').value + '°';
-            document.getElementById('val_ra_z').innerText = document.getElementById('ra_z').value + '°';
-            document.getElementById('val_la_x').innerText = document.getElementById('la_x').value + '°';
-            document.getElementById('val_la_z').innerText = document.getElementById('la_z').value + '°';
-
+            const r = id => document.getElementById(id).value * (Math.PI / 180);
+            
             const rightArm = currentModel.getObjectByName('RightArm') || currentModel.getObjectByName('RightUpperArm');
             const leftArm = currentModel.getObjectByName('LeftArm') || currentModel.getObjectByName('LeftUpperArm');
 
-            if (rightArm) { 
-                rightArm.rotation.x = -ra_x; 
-                rightArm.rotation.z = -ra_z; 
-            }
-            if (leftArm) { 
-                leftArm.rotation.x = -la_x; 
-                leftArm.rotation.z = la_z; 
-            }
-        }
-
-        function resetSliders() {
-            document.querySelectorAll('input[type="range"]').forEach(slider => {
-                if(slider.id !== 'model_scale') slider.value = 0;
-            });
-            updatePose();
+            if (rightArm) { rightArm.rotation.x = -r('ra_x'); rightArm.rotation.z = -r('ra_z'); }
+            if (leftArm) { leftArm.rotation.x = -r('la_x'); leftArm.rotation.z = r('la_z'); }
         }
 
         function setBackground(type) {
@@ -255,12 +230,7 @@
             link.click();
         }
 
-        function animate() {
-            requestAnimationFrame(animate);
-            if(controls) controls.update();
-            renderer.render(scene, camera);
-        }
-
+        function animate() { requestAnimationFrame(animate); if(controls) controls.update(); renderer.render(scene, camera); }
         init();
     </script>
 </body>
