@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>Roblox Avatar Studio (Stable + Auto Face Fix)</title>
+    <title>Roblox Avatar Studio (Auto Face Fix)</title>
     <style>
         body { margin: 0; display: flex; background: #1e2128; color: #cbd5e1; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; overflow: hidden; height: 100vh; }
         #sidebar { width: 350px; background: #0f172a; padding: 20px; overflow-y: auto; height: 100%; box-sizing: border-box; flex-shrink: 0; }
@@ -30,7 +30,7 @@
         
         <div class="control-group">
             <label>Input JSON Data</label>
-            <textarea id="jsonInput" placeholder='[{"objUrl": "...", "mtlUrl": "..."}]'></textarea>
+            <textarea id="jsonInput" placeholder='n8n에서 나온 JSON을 넣으세요'></textarea>
             <button onclick="loadModel()">Load Character</button>
         </div>
 
@@ -86,7 +86,6 @@
         function init() {
             scene = new THREE.Scene();
             camera = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
-            
             renderer = new THREE.WebGLRenderer({ preserveDrawingBuffer: true, alpha: true, antialias: true });
             renderer.setSize(OUTPUT_SIZE, OUTPUT_SIZE);
             renderer.setPixelRatio(1); 
@@ -107,16 +106,19 @@
 
         function loadModel() {
             try {
+                // n8n 원본 JSON (textureUrls 배열이 있는 버전)
                 const data = JSON.parse(document.getElementById('jsonInput').value)[0];
                 if(currentModel) scene.remove(currentModel);
 
                 const textureMap = {};
-                data.textureUrls.forEach(url => {
-                    const hash = url.split('/').pop(); 
-                    const pureHash = hash.replace('30DAY-', '').replace('7DAY-', ''); 
-                    textureMap[hash] = url;
-                    textureMap[pureHash] = url; 
-                });
+                if(data.textureUrls) {
+                    data.textureUrls.forEach(url => {
+                        const hash = url.split('/').pop(); 
+                        const pureHash = hash.replace('30DAY-', '').replace('7DAY-', ''); 
+                        textureMap[hash] = url;
+                        textureMap[pureHash] = url; 
+                    });
+                }
 
                 const manager = new THREE.LoadingManager();
                 manager.setURLModifier((url) => {
@@ -139,7 +141,6 @@
                         } else {
                             mat.transparent = false; 
                         }
-                        
                         mat.alphaMap = null; 
                         mat.depthWrite = true; 
                         mat.side = THREE.DoubleSide; 
@@ -160,28 +161,28 @@
                         object.position.z += (object.position.z - center.z);
                         object.rotation.y = Math.PI;
 
-                        // 🌟 [핵심] 불량 텍스처(4x4) 감지 및 기본 얼굴(스마일) 자동 교체 🌟
+                        // 🌟 [최강의 얼굴 복원 로직] 브라우저 단에서 불량 픽셀 검사 🌟
                         const defaultFaceUrl = 'https://tr.roproxy.com/38c3749746e5ba2b10a21069b2d86f7b/420/420/Decal/Png';
                         const texLoader = new THREE.TextureLoader();
                         texLoader.setCrossOrigin('anonymous');
                         
                         texLoader.load(defaultFaceUrl, (defaultFaceTexture) => {
-                            if (defaultFaceTexture.colorSpace !== undefined) {
-                                defaultFaceTexture.colorSpace = THREE.SRGBColorSpace;
-                            }
-
+                            if (defaultFaceTexture.colorSpace !== undefined) defaultFaceTexture.colorSpace = THREE.SRGBColorSpace;
+                            
                             object.traverse((child) => {
                                 if (child.isMesh) {
                                     const mats = Array.isArray(child.material) ? child.material : [child.material];
-                                    
                                     mats.forEach(mat => {
-                                        // 1. 텍스처가 있는 경우: 해상도(width/height)가 8픽셀 이하인 불량 파일인지 검사
+                                        // 1. 텍스처가 있는 파츠 (옷, 안경, 얼굴 등)
                                         if (mat.map && mat.map.image) {
-                                            const checkSize = () => {
-                                                const w = mat.map.image.width || mat.map.image.naturalWidth || 0;
-                                                // 4x4 같은 더미 파일 감지 시 기본 표정으로 교체
+                                            const img = mat.map.image;
+                                            
+                                            // 이미지 로딩 완료 후 해상도를 검사하는 함수
+                                            const checkSizeAndReplace = () => {
+                                                const w = img.naturalWidth || img.width;
+                                                // 4x4, 8x8 같은 찌그러진 더미 파일 감지!
                                                 if (w > 0 && w <= 8) {
-                                                    console.log(`불량 텍스처 감지됨 (${w}px). 스마일 표정으로 교체합니다.`);
+                                                    console.log(`불량 텍스처 감지(${w}px)! 스마일 표정으로 자동 교체합니다.`);
                                                     mat.map = defaultFaceTexture;
                                                     mat.transparent = true;
                                                     mat.alphaTest = 0.5;
@@ -189,13 +190,14 @@
                                                     mat.needsUpdate = true;
                                                 }
                                             };
-                                            // 텍스처 로딩이 이미 끝났으면 즉시 검사, 아니면 로드 완료 시 검사
-                                            if (mat.map.image.complete) checkSize();
-                                            else mat.map.image.addEventListener('load', checkSize);
+
+                                            // 이미지가 이미 로드되었으면 즉시 검사, 아니면 로드 완료 이벤트 기다림
+                                            if (img.complete) checkSizeAndReplace();
+                                            else img.addEventListener('load', checkSizeAndReplace);
                                         } 
-                                        // 2. 텍스처가 아예 없는 경우: 머리(Head) 파츠인데 비어있으면 교체
+                                        // 2. 아예 텍스처가 안 들어온 머리 파츠
                                         else if (mat.name.toLowerCase().includes('head') && !mat.map) {
-                                            console.log("얼굴 텍스처 누락 감지! 스마일 표정으로 교체합니다.");
+                                            console.log("얼굴 텍스처 완전 누락! 스마일 표정으로 자동 교체합니다.");
                                             mat.map = defaultFaceTexture;
                                             mat.transparent = true;
                                             mat.alphaTest = 0.5;
@@ -218,7 +220,7 @@
                     });
                 });
             } catch (e) {
-                alert("JSON 로드 중 에러가 발생했습니다. 브라우저 콘솔(F12)을 확인해주세요.");
+                alert("JSON 로드 중 에러가 발생했습니다.");
                 console.error(e);
             }
         }
@@ -232,45 +234,25 @@
 
         function setCameraAngle(type) {
             if (!currentModel) return;
-            
             const box = new THREE.Box3().setFromObject(currentModel);
             const size = box.getSize(new THREE.Vector3());
             const dist = Math.max(size.x, size.y, size.z) * 1.5;
 
-            if (type === 'front') {
-                camera.position.set(0, 0, dist);
-            } else if (type === 'right30') {
-                const rad = -30 * Math.PI / 180; 
-                camera.position.set(Math.sin(rad) * dist, 0, Math.cos(rad) * dist);
-            }
+            if (type === 'front') camera.position.set(0, 0, dist);
+            else if (type === 'right30') camera.position.set(Math.sin(-30 * Math.PI / 180) * dist, 0, Math.cos(-30 * Math.PI / 180) * dist);
+            
             camera.lookAt(0, 0, 0);
             if (controls) controls.update();
         }
 
         function updatePose() {
             if (!currentModel) return;
-
-            const ra_x = document.getElementById('ra_x').value * (Math.PI / 180);
-            const ra_z = document.getElementById('ra_z').value * (Math.PI / 180);
-            const la_x = document.getElementById('la_x').value * (Math.PI / 180);
-            const la_z = document.getElementById('la_z').value * (Math.PI / 180);
-
-            document.getElementById('val_ra_x').innerText = document.getElementById('ra_x').value + '°';
-            document.getElementById('val_ra_z').innerText = document.getElementById('ra_z').value + '°';
-            document.getElementById('val_la_x').innerText = document.getElementById('la_x').value + '°';
-            document.getElementById('val_la_z').innerText = document.getElementById('la_z').value + '°';
-
+            const r = id => document.getElementById(id).value * (Math.PI / 180);
             const rightArm = currentModel.getObjectByName('RightArm') || currentModel.getObjectByName('RightUpperArm');
             const leftArm = currentModel.getObjectByName('LeftArm') || currentModel.getObjectByName('LeftUpperArm');
 
-            if (rightArm) { 
-                rightArm.rotation.x = -ra_x; 
-                rightArm.rotation.z = -ra_z; 
-            }
-            if (leftArm) { 
-                leftArm.rotation.x = -la_x; 
-                leftArm.rotation.z = la_z; 
-            }
+            if (rightArm) { rightArm.rotation.x = -r('ra_x'); rightArm.rotation.z = -r('ra_z'); }
+            if (leftArm) { leftArm.rotation.x = -la_x; leftArm.rotation.z = r('la_z'); }
         }
 
         function resetSliders() {
@@ -294,12 +276,7 @@
             link.click();
         }
 
-        function animate() {
-            requestAnimationFrame(animate);
-            if(controls) controls.update();
-            renderer.render(scene, camera);
-        }
-
+        function animate() { requestAnimationFrame(animate); if(controls) controls.update(); renderer.render(scene, camera); }
         init();
     </script>
 </body>
