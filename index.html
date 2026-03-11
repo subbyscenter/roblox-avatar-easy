@@ -2,44 +2,104 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>Roblox Avatar Studio (Automation Ready)</title>
+    <title>Roblox Avatar Studio (Batch & ZIP Ready)</title>
     <style>
-        body { margin: 0; display: flex; background: transparent; overflow: hidden; height: 100vh; }
-        /* 자동화 모드일 때 사이드바 숨김 처리 가능 */
+        body { margin: 0; display: flex; background: #1e2128; color: #cbd5e1; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; overflow: hidden; height: 100vh; }
         #sidebar { width: 350px; background: #0f172a; padding: 20px; overflow-y: auto; height: 100%; box-sizing: border-box; flex-shrink: 0; }
-        #viewer-container { flex-grow: 1; display: flex; justify-content: center; align-items: center; padding: 20px; box-sizing: border-box; }
-        #viewer { width: 100%; max-width: 80vh; aspect-ratio: 1 / 1; background: transparent; }
+        #viewer-container { flex-grow: 1; display: flex; justify-content: center; align-items: center; background: #111; padding: 20px; box-sizing: border-box; position: relative; }
+        #viewer { width: 100%; max-width: 80vh; aspect-ratio: 1 / 1; box-shadow: 0 10px 30px rgba(0,0,0,0.5); background: transparent; }
         #viewer canvas { width: 100% !important; height: 100% !important; } 
 
-        textarea { width: 100%; height: 60px; background: #1e293b; color: white; border: 1px solid #334155; padding: 10px; border-radius: 5px; box-sizing: border-box; margin-bottom: 10px;}
-        button { width: 100%; padding: 10px; background: #3b82f6; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; margin-bottom: 10px;}
-        .control-group { margin-bottom: 15px; border-bottom: 1px solid #334155; padding-bottom: 10px;}
-        .control-group label { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 5px; color: #94a3b8; font-weight: bold; }
-        .row-buttons { display: flex; gap: 5px; margin-bottom: 5px; flex-wrap: wrap; }
+        textarea { width: 100%; height: 80px; background: #1e293b; color: white; border: 1px solid #334155; padding: 10px; border-radius: 5px; box-sizing: border-box; margin-bottom: 10px;}
+        button { width: 100%; padding: 10px; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; margin-bottom: 10px; transition: 0.2s; }
+        
+        .btn-load { background: #3b82f6; } .btn-load:hover { background: #2563eb; }
+        .btn-batch { background: #8b5cf6; } .btn-batch:hover { background: #7c3aed; }
+        .btn-dl { background: #10b981; } .btn-dl:hover { background: #059669; }
+
+        .control-group { margin-bottom: 15px; border-bottom: 1px solid #334155; padding-bottom: 15px;}
+        .control-group label { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 8px; color: #94a3b8; font-weight: bold; }
+        
+        .row-buttons { display: flex; gap: 5px; margin-bottom: 5px; }
         .row-buttons button { flex: 1; margin: 0; background: #475569; padding: 8px 5px; font-size: 12px; }
         .row-buttons button.active { background: #3b82f6; }
+
+        /* 배치 로딩 화면 */
+        #overlay { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); color: white; justify-content: center; align-items: center; flex-direction: column; z-index: 10; }
+        .spinner { border: 4px solid rgba(255,255,255,0.3); border-top: 4px solid #fff; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin-bottom: 10px; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
 </head>
 <body>
 
-    <div id="sidebar" class="ui-panel">
+    <div id="sidebar">
         <h3 style="color: white; margin-top: 0;">Roblox Avatar Studio</h3>
-        <div class="control-group"><textarea id="jsonInput"></textarea><button onclick="loadModel()">Load</button></div>
+        
+        <div class="control-group">
+            <label>Input JSON Data</label>
+            <textarea id="jsonInput" placeholder='JSON 데이터를 입력하세요'></textarea>
+            <div style="display: flex; gap: 10px;">
+                <button class="btn-load" onclick="loadModel()">단일 Preview</button>
+                <button class="btn-batch" onclick="startBatchProcess()">Batch Output (ZIP)</button>
+            </div>
+        </div>
+
+        <div class="control-group">
+            <label>Background (Preview용)</label>
+            <div class="row-buttons">
+                <button id="btnTrans" class="active" onclick="setBackground('transparent')">Transparent</button>
+                <button id="btnGreen" onclick="setBackground('green')">Green Screen</button>
+            </div>
+        </div>
+
+        <div class="control-group">
+            <label>Model Size (Preview용)</label>
+            <div class="row-buttons">
+                <button id="btnScale100" class="active" onclick="setScale(100)">100%</button>
+                <button id="btnScale75" onclick="setScale(75)">75%</button>
+                <button id="btnScale50" onclick="setScale(50)">50%</button>
+            </div>
+        </div>
+
+        <div class="control-group">
+            <label>Camera Angle (Preview용)</label>
+            <div class="row-buttons">
+                <button id="btnAngle0" class="active" onclick="setCameraAngle(0)">Front (0°)</button>
+                <button id="btnAngle30" onclick="setCameraAngle(30)">30°</button>
+                <button id="btnAngle45" onclick="setCameraAngle(45)">45°</button>
+                <button id="btnAngle60" onclick="setCameraAngle(60)">60°</button>
+            </div>
+        </div>
+
+        <button class="btn-dl" onclick="downloadPNG()">⬇ 현재 화면 다운로드</button>
     </div>
 
-    <div id="viewer-container"><div id="viewer"></div></div>
+    <div id="viewer-container">
+        <div id="overlay">
+            <div class="spinner"></div>
+            <h2 id="progressText">Batch Processing...</h2>
+        </div>
+        <div id="viewer"></div>
+    </div>
 
+    <!-- Three.js Libraries -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/OBJLoader.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/MTLLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    
+    <!-- ZIP 생성을 위한 라이브러리 추가 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
 
     <script>
-        let scene, camera, renderer, currentModel;
+        let scene, camera, renderer, controls, currentModel;
         let OUTPUT_SIZE = 1080; 
         
         function init() {
             scene = new THREE.Scene();
             camera = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
+            
             renderer = new THREE.WebGLRenderer({ preserveDrawingBuffer: true, alpha: true, antialias: true });
             renderer.setSize(OUTPUT_SIZE, OUTPUT_SIZE);
             renderer.setPixelRatio(1); 
@@ -51,32 +111,19 @@
             dirLight.position.set(5, 10, 10);
             scene.add(dirLight);
 
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.target.set(0, 0, 0);
+
             animate();
-            checkAutoRun(); // 🌟 자동화 실행 체크
         }
 
-        function loadModel(autoAngle = 'front', autoScale = 100) {
-            try {
-                const inputText = document.getElementById('jsonInput').value;
-                const rawData = JSON.parse(inputText);
-                
-                function findModelData(node) {
-                    if (!node || typeof node !== 'object') return null;
-                    if (node.objUrl && node.mtlUrl) return node; 
-                    for (const key in node) {
-                        const found = findModelData(node[key]);
-                        if (found) return found;
-                    }
-                    return null;
-                }
-                const data = findModelData(rawData);
-                if(currentModel) scene.remove(currentModel);
-
+        // 🌟 Promise 기반 모델 로더 (비동기 Batch 처리를 위해 필수) 🌟
+        function loadModelAsync(charData) {
+            return new Promise((resolve, reject) => {
                 const textureMap = {};
-                if (data.textureMap) {
-                    Object.assign(textureMap, data.textureMap);
-                } else if (data.textureUrls) {
-                    data.textureUrls.forEach(url => {
+                if (charData.textureUrls) {
+                    charData.textureUrls.forEach(url => {
                         const hash = url.split('/').pop(); 
                         const pureHash = hash.replace('30DAY-', '').replace('7DAY-', ''); 
                         textureMap[hash] = url; textureMap[pureHash] = url; 
@@ -91,8 +138,9 @@
 
                 const mtlLoader = new THREE.MTLLoader(manager);
                 mtlLoader.setCrossOrigin('anonymous');
-                mtlLoader.load(data.mtlUrl, (materials) => {
+                mtlLoader.load(charData.mtlUrl, (materials) => {
                     materials.preload();
+                    
                     for (const key in materials.materials) {
                         const mat = materials.materials[key];
                         mat.transparent = mat.map ? true : false;
@@ -101,64 +149,193 @@
 
                     const objLoader = new THREE.OBJLoader(manager);
                     objLoader.setMaterials(materials);
-                    objLoader.load(data.objUrl, (object) => {
+                    objLoader.load(charData.objUrl, (object) => {
                         const box = new THREE.Box3().setFromObject(object);
                         const center = box.getCenter(new THREE.Vector3());
+                        
                         object.position.set(-center.x, -center.y, -center.z);
                         object.rotation.y = Math.PI;
 
-                        currentModel = new THREE.Group();
-                        currentModel.add(object);
-                        scene.add(currentModel);
+                        const group = new THREE.Group();
+                        group.add(object);
                         
-                        camera.userData.baseDist = Math.max(box.getSize(new THREE.Vector3()).x, box.getSize(new THREE.Vector3()).y) * 1.5;
+                        const size = box.getSize(new THREE.Vector3());
+                        const baseDist = Math.max(size.x, size.y, size.z) * 1.5;
 
-                        // 자동화 파라미터 적용
-                        const s = autoScale / 100;
-                        currentModel.scale.set(s, s, s);
-
-                        if (autoAngle === 'front') {
-                            camera.position.set(0, 0, camera.userData.baseDist);
-                        } else {
-                            const rad = -parseInt(autoAngle) * Math.PI / 180; 
-                            camera.position.set(Math.sin(rad) * camera.userData.baseDist, 0, Math.cos(rad) * camera.userData.baseDist);
-                        }
-                        camera.lookAt(0, 0, 0);
-
-                        // 🌟 n8n(Puppeteer)에게 렌더링 완료를 알리는 신호 생성
-                        setTimeout(() => {
-                            const readyDiv = document.createElement('div');
-                            readyDiv.id = 'render-complete';
-                            document.body.appendChild(readyDiv);
-                        }, 1000); // 텍스처 입혀질 시간 1초 대기
-                    });
-                });
-            } catch (e) { console.error(e); }
+                        // 얼굴 텍스처 복구 (안전망)
+                        const texLoader = new THREE.TextureLoader();
+                        texLoader.setCrossOrigin('anonymous');
+                        texLoader.load('https://tr.roproxy.com/38c3749746e5ba2b10a21069b2d86f7b/420/420/Decal/Png', (tex) => {
+                            tex.colorSpace = THREE.SRGBColorSpace;
+                            object.traverse((child) => {
+                                if (child.isMesh) {
+                                    const mats = Array.isArray(child.material) ? child.material : [child.material];
+                                    mats.forEach(mat => {
+                                        if (mat.name.toLowerCase().includes('head') && (!mat.map || (mat.map.image && mat.map.image.width <= 8))) {
+                                            mat.map = tex; mat.transparent = true; mat.alphaTest = 0.5; mat.color.setHex(0xffffff); mat.needsUpdate = true;
+                                        }
+                                    });
+                                }
+                            });
+                            // 텍스처 로딩 후 0.5초 대기하여 완전 렌더링 보장
+                            setTimeout(() => { resolve({ model: group, baseDist: baseDist }); }, 500);
+                        });
+                    }, undefined, reject);
+                }, undefined, reject);
+            });
         }
 
-        // 🌟 URL 파라미터를 읽어서 자동 실행하는 함수
-        function checkAutoRun() {
-            const params = new URLSearchParams(window.location.search);
-            if (params.has('data')) {
-                document.querySelector('.ui-panel').style.display = 'none'; // 스크린샷 방해 안되게 UI 숨김
+        // 🌟 [Batch Output] 자동 렌더링 및 ZIP 압축 로직 🌟
+        async function startBatchProcess() {
+            try {
+                const inputText = document.getElementById('jsonInput').value.trim();
+                const rawData = JSON.parse(inputText)[0]; // 입력된 JSON의 첫 객체
+
+                if (!rawData.characters || !rawData.render_settings) {
+                    alert("Batch Output은 'characters'와 'render_settings'가 포함된 JSON에서만 동작합니다.");
+                    return;
+                }
+
+                // UI 잠금 및 오버레이 표시
+                document.getElementById('overlay').style.display = 'flex';
                 
-                // 파라미터 읽기
-                const jsonData = decodeURIComponent(params.get('data'));
-                const angle = params.get('angle') || 'front';
-                const scale = params.get('scale') || 100;
-                const res = params.get('res') || 1080;
-                
-                // 설정 적용
-                OUTPUT_SIZE = parseInt(res);
-                renderer.setSize(OUTPUT_SIZE, OUTPUT_SIZE);
-                document.getElementById('jsonInput').value = jsonData;
-                
-                // 렌더링 시작
-                loadModel(angle, scale);
+                const settings = rawData.render_settings;
+                const zip = new JSZip();
+
+                // 1. 해상도 설정
+                const res = parseInt(settings.resolution) || 1080;
+                renderer.setSize(res, res);
+
+                // 2. 배경 설정
+                if (settings.background.toLowerCase() === 'transparent') {
+                    renderer.setClearColor(0x000000, 0);
+                } else {
+                    renderer.setClearColor(0x00ff00, 1);
+                }
+
+                // 3. 순회 렌더링 시작
+                for (let i = 0; i < rawData.characters.length; i++) {
+                    const char = rawData.characters[i];
+                    document.getElementById('progressText').innerText = `Processing: ${char.ID_Name} (${i+1}/${rawData.characters.length})`;
+
+                    // 모델 로드
+                    if(currentModel) scene.remove(currentModel);
+                    const loadedData = await loadModelAsync(char);
+                    currentModel = loadedData.model;
+                    camera.userData.baseDist = loadedData.baseDist;
+                    scene.add(currentModel);
+
+                    // 스케일 적용
+                    const scaleVal = parseInt(settings.scale) / 100;
+                    currentModel.scale.set(scaleVal, scaleVal, scaleVal);
+
+                    // 각도별 캡처
+                    for (let angle of settings.angles) {
+                        setCameraAngle(angle);
+                        
+                        // 화면 갱신을 위해 약간의 딜레이
+                        await new Promise(r => setTimeout(r, 200)); 
+                        renderer.render(scene, camera);
+
+                        // 이미지 추출 및 ZIP 추가
+                        const imgData = renderer.domElement.toDataURL("image/png").split(',')[1]; // Base64 헤더 제거
+                        zip.file(`${char.ID_Name}_${angle}.png`, imgData, {base64: true});
+                    }
+                }
+
+                // 모든 작업 완료, ZIP 생성 및 다운로드
+                document.getElementById('progressText').innerText = "Zipping files...";
+                const content = await zip.generateAsync({type:"blob"});
+                saveAs(content, "Roblox_Avatars_Batch.zip");
+
+                // 정리
+                if(currentModel) scene.remove(currentModel);
+                document.getElementById('overlay').style.display = 'none';
+                alert("Batch 작업이 완료되었습니다!");
+
+            } catch (e) {
+                alert("Batch 처리 중 오류가 발생했습니다.");
+                console.error(e);
+                document.getElementById('overlay').style.display = 'none';
             }
         }
 
-        function animate() { requestAnimationFrame(animate); renderer.render(scene, camera); }
+        // 기존 1명 Preview 기능 (스마트 파서 유지)
+        function loadModel() {
+            try {
+                const inputText = document.getElementById('jsonInput').value.trim();
+                const rawData = JSON.parse(inputText);
+                
+                function findFirstModel(node) {
+                    if (!node || typeof node !== 'object') return null;
+                    if (node.objUrl && node.mtlUrl) return node; 
+                    for (const key in node) {
+                        const found = findFirstModel(node[key]);
+                        if (found) return found;
+                    }
+                    return null;
+                }
+                const firstChar = findFirstModel(rawData);
+                if (!firstChar) return alert("JSON에 모델 데이터가 없습니다.");
+
+                document.getElementById('overlay').style.display = 'flex';
+                document.getElementById('progressText').innerText = "Loading Preview...";
+
+                if(currentModel) scene.remove(currentModel);
+                
+                loadModelAsync(firstChar).then(loadedData => {
+                    currentModel = loadedData.model;
+                    camera.userData.baseDist = loadedData.baseDist;
+                    scene.add(currentModel);
+                    
+                    setScale(100);
+                    setCameraAngle(0);
+                    document.getElementById('overlay').style.display = 'none';
+                }).catch(err => {
+                    console.error(err);
+                    document.getElementById('overlay').style.display = 'none';
+                });
+            } catch (e) { alert("JSON 형식 오류"); }
+        }
+
+        // --- 기능 제어 함수들 (Preview용) ---
+        function setScale(percent) {
+            [100, 75, 50].forEach(val => { document.getElementById('btnScale' + val).className = (val === percent) ? 'active' : ''; });
+            if (!currentModel) return;
+            const s = percent / 100;
+            currentModel.scale.set(s, s, s); 
+        }
+
+        function setCameraAngle(angle) {
+            [0, 30, 45, 60].forEach(val => { document.getElementById('btnAngle' + val).className = (val === angle) ? 'active' : ''; });
+            if (!currentModel || !camera.userData.baseDist) return;
+            const dist = camera.userData.baseDist;
+            const rad = -angle * Math.PI / 180; 
+            camera.position.set(Math.sin(rad) * dist, 0, Math.cos(rad) * dist);
+            camera.lookAt(0, 0, 0);
+            if (controls) controls.update();
+        }
+
+        function setBackground(type) {
+            document.getElementById('btnTrans').className = type === 'transparent' ? 'active' : '';
+            document.getElementById('btnGreen').className = type === 'green' ? 'active' : '';
+            renderer.setClearColor(type === 'transparent' ? 0x000000 : 0x00ff00, type === 'transparent' ? 0 : 1);
+        }
+
+        function downloadPNG() {
+            renderer.render(scene, camera);
+            const link = document.createElement('a');
+            link.download = `roblox_avatar_preview.png`;
+            link.href = renderer.domElement.toDataURL("image/png");
+            link.click();
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            if(controls) controls.update();
+            renderer.render(scene, camera);
+        }
+
         init();
     </script>
 </body>
