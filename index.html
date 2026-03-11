@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>Roblox Avatar Studio (1080p)</title>
+    <title>Roblox Avatar Studio (1080p Fixed)</title>
     <style>
         body { margin: 0; display: flex; background: #1e2128; color: #cbd5e1; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; overflow: hidden; height: 100vh; }
         #sidebar { width: 350px; background: #0f172a; padding: 20px; overflow-y: auto; height: 100%; box-sizing: border-box; flex-shrink: 0; }
@@ -52,26 +52,26 @@
         </div>
 
         <div class="control-group">
-            <label>Camera Angle (자동 앵글)</label>
+            <label>Camera Angle (앵글 조절)</label>
             <div class="row-buttons">
                 <button onclick="setCameraAngle('front')">Front (정면)</button>
-                <button onclick="setCameraAngle('right30')">Right 30° (우측 측면)</button>
+                <button onclick="setCameraAngle('right30')">Right 30° (우측면)</button>
             </div>
         </div>
 
         <div class="control-group" style="border-bottom: none;">
             <label>POSE CONTROL (포즈 조절)</label>
-            <label style="font-weight: normal;">Right Arm (앞뒤) <span id="val_ra_x">0</span></label>
-            <input type="range" id="ra_x" min="-180" max="180" value="0" oninput="updatePose()">
-            <label style="font-weight: normal;">Right Arm (상하) <span id="val_ra_z">0</span></label>
+            <label style="font-weight: normal;">Right Arm (상하 올리기) <span id="val_ra_z">0</span></label>
             <input type="range" id="ra_z" min="-180" max="180" value="0" oninput="updatePose()">
-            <label style="font-weight: normal;">Left Arm (앞뒤) <span id="val_la_x">0</span></label>
-            <input type="range" id="la_x" min="-180" max="180" value="0" oninput="updatePose()">
-            <label style="font-weight: normal;">Left Arm (상하) <span id="val_la_z">0</span></label>
+            <label style="font-weight: normal;">Right Arm (앞뒤 뻗기) <span id="val_ra_x">0</span></label>
+            <input type="range" id="ra_x" min="-180" max="180" value="0" oninput="updatePose()">
+            <label style="font-weight: normal;">Left Arm (상하 올리기) <span id="val_la_z">0</span></label>
             <input type="range" id="la_z" min="-180" max="180" value="0" oninput="updatePose()">
+            <label style="font-weight: normal;">Left Arm (앞뒤 뻗기) <span id="val_la_x">0</span></label>
+            <input type="range" id="la_x" min="-180" max="180" value="0" oninput="updatePose()">
         </div>
 
-        <button onclick="downloadPNG()" style="background: #10b981; margin-top: 10px; font-size: 16px;">⬇ Download PNG (1080p)</button>
+        <button onclick="downloadPNG()" style="background: #10b981; margin-top: 10px; font-size: 16px;">⬇ Download PNG (1080x1080)</button>
     </div>
 
     <div id="viewer-container">
@@ -85,8 +85,8 @@
 
     <script>
         let scene, camera, renderer, controls, currentModel;
-        const OUTPUT_SIZE = 1080; // 1080x1080 출력 고정
-        const CAMERA_DIST = 12;   // 피사체와의 기본 거리
+        const OUTPUT_SIZE = 1080; // 1080x1080 고정
+        const CAMERA_DIST = 12;   
         
         function init() {
             scene = new THREE.Scene();
@@ -98,9 +98,9 @@
             renderer.setClearColor(0x000000, 0); 
             document.getElementById('viewer').appendChild(renderer.domElement);
 
-            // 빛 설정 (자연스러운 피부색을 위해 조명 추가)
+            // 빛 설정 (피부색 복원)
             scene.add(new THREE.AmbientLight(0xffffff, 0.9));
-            const dirLight = new THREE.DirectionalLight(0xffffff, 0.5);
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.6);
             dirLight.position.set(5, 10, 10);
             scene.add(dirLight);
 
@@ -108,7 +108,7 @@
             controls.enableDamping = true;
             controls.target.set(0, 0, 0);
 
-            setCameraAngle('front'); // 시작 시 정면 배치
+            setCameraAngle('front'); 
             animate();
         }
 
@@ -137,13 +137,20 @@
                 mtlLoader.load(data.mtlUrl, (materials) => {
                     materials.preload();
                     
-                    // ✨ 핵심 버그 픽스 구역: 로블록스 텍스처 렌더링 정상화
+                    // 🔥 [핵심 해결 로직] 로블록스 유령 현상 완벽 제거 🔥
                     for (const key in materials.materials) {
                         const mat = materials.materials[key];
-                        mat.transparent = true;       // 투명도 허용 (안경, 옷 파츠 등)
-                        mat.depthWrite = true;        // ★중요: 뒤에 있는 물체가 앞으로 튀어나오는(유령) 현상 방지
-                        mat.alphaTest = 0.1;          // 배경이 날아간 구멍을 제대로 파냄
-                        mat.side = THREE.DoubleSide;  // 옷 안쪽이 투명해지는 현상 방지
+                        // 1. 유령처럼 반투명해지는 효과를 완전히 끕니다. (피부 복원)
+                        mat.transparent = false; 
+                        
+                        // 2. 텍스처에서 투명한 픽셀(배경 등)은 칼같이 잘라버립니다. (옷 구멍 복원)
+                        mat.alphaTest = 0.5; 
+                        
+                        // 3. 깊이 쓰기 활성화 (앞/뒤 겹침 문제 해결)
+                        mat.depthWrite = true;
+                        
+                        // 4. 로블록스가 임의로 적용한 어두운 색조팅을 하얗게 초기화 (원래 피부색 복원)
+                        mat.color.setHex(0xffffff); 
                     }
 
                     const objLoader = new THREE.OBJLoader(manager);
@@ -151,17 +158,16 @@
                     objLoader.load(data.objUrl, (object) => {
                         currentModel = object;
 
-                        // 1. 모델을 중앙에 맞춤
+                        // 모델 중앙 정렬
                         const box = new THREE.Box3().setFromObject(object);
                         const centerY = (box.min.y + box.max.y) / 2;
                         object.position.set(0, -centerY, 0); 
                         
-                        // 2. ★중요: 로블록스 모델은 기본적으로 뒤를 보고 있으므로 180도 돌려서 정면을 보게 함
+                        // 로블록스는 기본적으로 등짝을 보여주므로 180도 회전
                         object.rotation.y = Math.PI;
 
                         scene.add(object);
                         
-                        // 로드 완료 후 리셋
                         resetSliders();
                         updateScale(); 
                         setCameraAngle('front'); 
@@ -172,7 +178,6 @@
             }
         }
 
-        // 스케일 조절
         function updateScale() {
             if (!currentModel) return;
             const scaleVal = document.getElementById('model_scale').value / 100;
@@ -180,12 +185,10 @@
             document.getElementById('val_scale').innerText = document.getElementById('model_scale').value;
         }
 
-        // 카메라 앵글 조절 (정면 / 우측 30도)
         function setCameraAngle(type) {
             if (type === 'front') {
                 camera.position.set(0, 0, CAMERA_DIST);
             } else if (type === 'right30') {
-                // 우측 30도는 카메라를 왼쪽으로 30도(-30도) 이동시켜야 피사체의 우측면이 보임
                 const rad = -30 * Math.PI / 180; 
                 camera.position.set(Math.sin(rad) * CAMERA_DIST, 0, Math.cos(rad) * CAMERA_DIST);
             }
@@ -193,7 +196,7 @@
             if (controls) controls.update();
         }
 
-        // 포즈 조절 (팔 움직임 복구)
+        // 포즈(관절) 조절 로직
         function updatePose() {
             if (!currentModel) return;
 
@@ -207,12 +210,19 @@
             document.getElementById('val_la_x').innerText = document.getElementById('la_x').value + '°';
             document.getElementById('val_la_z').innerText = document.getElementById('la_z').value + '°';
 
-            // 로블록스 부품 이름으로 뼈대 찾아서 회전 (전체가 180도 돌았으므로 축 방향이 다르게 느껴질 수 있음)
+            // 로블록스 R6 / R15 호환 뼈대 찾기
             const rightArm = currentModel.getObjectByName('RightArm') || currentModel.getObjectByName('RightUpperArm');
             const leftArm = currentModel.getObjectByName('LeftArm') || currentModel.getObjectByName('LeftUpperArm');
 
-            if (rightArm) { rightArm.rotation.x = ra_x; rightArm.rotation.z = ra_z; }
-            if (leftArm) { leftArm.rotation.x = la_x; leftArm.rotation.z = la_z; }
+            // 모델을 180도 돌렸기 때문에 축이 반대로 적용될 수 있어 직관적으로 매칭되도록 설정
+            if (rightArm) { 
+                rightArm.rotation.x = -ra_x; // 앞뒤
+                rightArm.rotation.z = -ra_z; // 상하
+            }
+            if (leftArm) { 
+                leftArm.rotation.x = -la_x; 
+                leftArm.rotation.z = la_z; // 반대쪽 팔이므로 Z축 반전
+            }
         }
 
         function resetSliders() {
@@ -222,14 +232,12 @@
             updatePose();
         }
 
-        // 배경 전환
         function setBackground(type) {
             document.getElementById('btnTrans').className = type === 'transparent' ? 'active' : '';
             document.getElementById('btnGreen').className = type === 'green' ? 'active' : '';
             renderer.setClearColor(type === 'transparent' ? 0x000000 : 0x00ff00, type === 'transparent' ? 0 : 1);
         }
 
-        // 1080x1080 이미지 다운로드
         function downloadPNG() {
             renderer.render(scene, camera);
             const link = document.createElement('a');
