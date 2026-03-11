@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>Roblox Avatar Studio (1080p Fixed)</title>
+    <title>Roblox Avatar Studio (DevForum Fixed)</title>
     <style>
         body { margin: 0; display: flex; background: #1e2128; color: #cbd5e1; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; overflow: hidden; height: 100vh; }
         #sidebar { width: 350px; background: #0f172a; padding: 20px; overflow-y: auto; height: 100%; box-sizing: border-box; flex-shrink: 0; }
@@ -85,9 +85,18 @@
 
     <script>
         let scene, camera, renderer, controls, currentModel;
-        const OUTPUT_SIZE = 1080; // 1080x1080 고정
+        const OUTPUT_SIZE = 1080; 
         const CAMERA_DIST = 12;   
         
+        // 🌟 [핵심 1] 데브포럼의 CDN 해시 계산 알고리즘 적용
+        function getRobloxCdnUrl(hash) {
+            let i = 31;
+            for (let t = 0; t < hash.length; t++) {
+                i ^= hash.charCodeAt(t);
+            }
+            return `https://t${i % 8}.rbxcdn.com/${hash}`;
+        }
+
         function init() {
             scene = new THREE.Scene();
             camera = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
@@ -98,7 +107,7 @@
             renderer.setClearColor(0x000000, 0); 
             document.getElementById('viewer').appendChild(renderer.domElement);
 
-            // 빛 설정 (피부색 복원)
+            // 조명 설정
             scene.add(new THREE.AmbientLight(0xffffff, 0.9));
             const dirLight = new THREE.DirectionalLight(0xffffff, 0.6);
             dirLight.position.set(5, 10, 10);
@@ -117,17 +126,13 @@
                 const data = JSON.parse(document.getElementById('jsonInput').value)[0];
                 if(currentModel) scene.remove(currentModel);
 
-                const textureMap = {};
-                data.textureUrls.forEach(url => {
-                    const hash = url.split('/').pop();
-                    textureMap[hash] = url;
-                    textureMap[hash.replace('30DAY-', '')] = url;
-                });
-
                 const manager = new THREE.LoadingManager();
+                
+                // 🌟 [핵심 2] MTL 파일이 요구하는 텍스처 URL을 가로채서 올바른 CDN으로 변환
                 manager.setURLModifier((url) => {
-                    for (const key in textureMap) {
-                        if (url.includes(key)) return textureMap[key];
+                    if (url.includes('rbxcdn.com')) {
+                        const hash = url.split('/').pop(); // '30DAY-...' 해시만 추출
+                        return getRobloxCdnUrl(hash);      // 올바른 서버 계산해서 리턴
                     }
                     return url;
                 });
@@ -137,20 +142,12 @@
                 mtlLoader.load(data.mtlUrl, (materials) => {
                     materials.preload();
                     
-                    // 🔥 [핵심 해결 로직] 로블록스 유령 현상 완벽 제거 🔥
+                    // 🌟 [핵심 3] 데브포럼의 렌더링 해결책 적용 (유령화 방지)
                     for (const key in materials.materials) {
                         const mat = materials.materials[key];
-                        // 1. 유령처럼 반투명해지는 효과를 완전히 끕니다. (피부 복원)
-                        mat.transparent = false; 
-                        
-                        // 2. 텍스처에서 투명한 픽셀(배경 등)은 칼같이 잘라버립니다. (옷 구멍 복원)
-                        mat.alphaTest = 0.5; 
-                        
-                        // 3. 깊이 쓰기 활성화 (앞/뒤 겹침 문제 해결)
-                        mat.depthWrite = true;
-                        
-                        // 4. 로블록스가 임의로 적용한 어두운 색조팅을 하얗게 초기화 (원래 피부색 복원)
-                        mat.color.setHex(0xffffff); 
+                        mat.transparent = false; // 절대 투명해지지 않게 강제 설정
+                        mat.alphaTest = 0.5;     // 머리카락, 안경 등 구멍 뚫린 부분만 오려냄 (검은색 덩어리 방지)
+                        mat.color.setHex(0xffffff); // 로블록스의 기본 어두운 톤 제거
                     }
 
                     const objLoader = new THREE.OBJLoader(manager);
@@ -163,7 +160,7 @@
                         const centerY = (box.min.y + box.max.y) / 2;
                         object.position.set(0, -centerY, 0); 
                         
-                        // 로블록스는 기본적으로 등짝을 보여주므로 180도 회전
+                        // 등짝 대신 정면을 보도록 180도 회전
                         object.rotation.y = Math.PI;
 
                         scene.add(object);
@@ -175,6 +172,7 @@
                 });
             } catch (e) {
                 alert("JSON 로드 에러. 데이터를 확인하세요.");
+                console.error(e);
             }
         }
 
@@ -210,18 +208,16 @@
             document.getElementById('val_la_x').innerText = document.getElementById('la_x').value + '°';
             document.getElementById('val_la_z').innerText = document.getElementById('la_z').value + '°';
 
-            // 로블록스 R6 / R15 호환 뼈대 찾기
             const rightArm = currentModel.getObjectByName('RightArm') || currentModel.getObjectByName('RightUpperArm');
             const leftArm = currentModel.getObjectByName('LeftArm') || currentModel.getObjectByName('LeftUpperArm');
 
-            // 모델을 180도 돌렸기 때문에 축이 반대로 적용될 수 있어 직관적으로 매칭되도록 설정
             if (rightArm) { 
-                rightArm.rotation.x = -ra_x; // 앞뒤
-                rightArm.rotation.z = -ra_z; // 상하
+                rightArm.rotation.x = -ra_x; 
+                rightArm.rotation.z = -ra_z; 
             }
             if (leftArm) { 
                 leftArm.rotation.x = -la_x; 
-                leftArm.rotation.z = la_z; // 반대쪽 팔이므로 Z축 반전
+                leftArm.rotation.z = la_z; 
             }
         }
 
