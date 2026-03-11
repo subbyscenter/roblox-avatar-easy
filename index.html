@@ -2,21 +2,19 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>Roblox Avatar Studio (Smart Parser)</title>
+    <title>Roblox Avatar Studio (Automation Ready)</title>
     <style>
-        body { margin: 0; display: flex; background: #1e2128; color: #cbd5e1; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; overflow: hidden; height: 100vh; }
+        body { margin: 0; display: flex; background: transparent; overflow: hidden; height: 100vh; }
+        /* 자동화 모드일 때 사이드바 숨김 처리 가능 */
         #sidebar { width: 350px; background: #0f172a; padding: 20px; overflow-y: auto; height: 100%; box-sizing: border-box; flex-shrink: 0; }
-        #viewer-container { flex-grow: 1; display: flex; justify-content: center; align-items: center; background: #111; padding: 20px; box-sizing: border-box; }
-        #viewer { width: 100%; max-width: 80vh; aspect-ratio: 1 / 1; box-shadow: 0 10px 30px rgba(0,0,0,0.5); background: #000; }
+        #viewer-container { flex-grow: 1; display: flex; justify-content: center; align-items: center; padding: 20px; box-sizing: border-box; }
+        #viewer { width: 100%; max-width: 80vh; aspect-ratio: 1 / 1; background: transparent; }
         #viewer canvas { width: 100% !important; height: 100% !important; } 
 
-        textarea { width: 100%; height: 80px; background: #1e293b; color: white; border: 1px solid #334155; padding: 10px; border-radius: 5px; box-sizing: border-box; margin-bottom: 10px;}
-        button { width: 100%; padding: 10px; background: #3b82f6; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; margin-bottom: 10px; transition: 0.2s; }
-        button:hover { background: #2563eb; }
-        
-        .control-group { margin-bottom: 15px; border-bottom: 1px solid #334155; padding-bottom: 15px;}
-        .control-group label { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 8px; color: #94a3b8; font-weight: bold; }
-        
+        textarea { width: 100%; height: 60px; background: #1e293b; color: white; border: 1px solid #334155; padding: 10px; border-radius: 5px; box-sizing: border-box; margin-bottom: 10px;}
+        button { width: 100%; padding: 10px; background: #3b82f6; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; margin-bottom: 10px;}
+        .control-group { margin-bottom: 15px; border-bottom: 1px solid #334155; padding-bottom: 10px;}
+        .control-group label { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 5px; color: #94a3b8; font-weight: bold; }
         .row-buttons { display: flex; gap: 5px; margin-bottom: 5px; flex-wrap: wrap; }
         .row-buttons button { flex: 1; margin: 0; background: #475569; padding: 8px 5px; font-size: 12px; }
         .row-buttons button.active { background: #3b82f6; }
@@ -24,72 +22,24 @@
 </head>
 <body>
 
-    <div id="sidebar">
+    <div id="sidebar" class="ui-panel">
         <h3 style="color: white; margin-top: 0;">Roblox Avatar Studio</h3>
-        
-        <div class="control-group">
-            <label>Input JSON Data (형식 자유)</label>
-            <textarea id="jsonInput" placeholder='JSON을 복사해서 넣으세요 (배열이든 객체든 상관없습니다)'></textarea>
-            <button onclick="loadModel()">Load Character</button>
-        </div>
-
-        <div class="control-group">
-            <label>Background</label>
-            <div class="row-buttons">
-                <button id="btnTrans" class="active" onclick="setBackground('transparent')">Transparent</button>
-                <button id="btnGreen" onclick="setBackground('green')">Green Screen</button>
-            </div>
-        </div>
-
-        <div class="control-group">
-            <label>Model Size (Scale)</label>
-            <div class="row-buttons">
-                <button id="btnScale100" class="active" onclick="setScale(100)">100%</button>
-                <button id="btnScale75" onclick="setScale(75)">75%</button>
-                <button id="btnScale50" onclick="setScale(50)">50%</button>
-                <button id="btnScale25" onclick="setScale(25)">25%</button>
-            </div>
-        </div>
-
-        <div class="control-group">
-            <label>Camera Angle</label>
-            <div class="row-buttons">
-                <button id="btnAngleFront" class="active" onclick="setCameraAngle('front')">Front</button>
-                <button id="btnAngle30" onclick="setCameraAngle(30)">R 30°</button>
-                <button id="btnAngle45" onclick="setCameraAngle(45)">R 45°</button>
-                <button id="btnAngle60" onclick="setCameraAngle(60)">R 60°</button>
-            </div>
-        </div>
-
-        <div class="control-group" style="border-bottom: none;">
-            <label>Output Resolution</label>
-            <div class="row-buttons">
-                <button id="btnRes1080" class="active" onclick="setResolution(1080)">1080p</button>
-                <button id="btnRes720" onclick="setResolution(720)">720p</button>
-                <button id="btnRes540" onclick="setResolution(540)">540p</button>
-            </div>
-        </div>
-
-        <button id="btnDownload" onclick="downloadPNG()" style="background: #10b981; margin-top: 5px; font-size: 16px;">⬇ Download PNG (1080p)</button>
+        <div class="control-group"><textarea id="jsonInput"></textarea><button onclick="loadModel()">Load</button></div>
     </div>
 
-    <div id="viewer-container">
-        <div id="viewer"></div>
-    </div>
+    <div id="viewer-container"><div id="viewer"></div></div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/OBJLoader.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/MTLLoader.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 
     <script>
-        let scene, camera, renderer, controls, currentModel;
+        let scene, camera, renderer, currentModel;
         let OUTPUT_SIZE = 1080; 
         
         function init() {
             scene = new THREE.Scene();
             camera = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
-            
             renderer = new THREE.WebGLRenderer({ preserveDrawingBuffer: true, alpha: true, antialias: true });
             renderer.setSize(OUTPUT_SIZE, OUTPUT_SIZE);
             renderer.setPixelRatio(1); 
@@ -101,64 +51,41 @@
             dirLight.position.set(5, 10, 10);
             scene.add(dirLight);
 
-            controls = new THREE.OrbitControls(camera, renderer.domElement);
-            controls.enableDamping = true;
-            controls.target.set(0, 0, 0);
-
             animate();
+            checkAutoRun(); // 🌟 자동화 실행 체크
         }
 
-        function loadModel() {
+        function loadModel(autoAngle = 'front', autoScale = 100) {
             try {
-                const inputText = document.getElementById('jsonInput').value.trim();
-                let rawData;
+                const inputText = document.getElementById('jsonInput').value;
+                const rawData = JSON.parse(inputText);
                 
-                try {
-                    rawData = JSON.parse(inputText);
-                } catch(e) {
-                    alert("JSON 형식이 잘못되었습니다. (따옴표나 괄호 누락 등)");
-                    return;
-                }
-
-                // 🌟 [스마트 탐색기] 객체든 배열이든 다 까보고 objUrl과 mtlUrl이 있는 곳을 찾아냅니다.
                 function findModelData(node) {
                     if (!node || typeof node !== 'object') return null;
-                    if (node.objUrl && node.mtlUrl) return node; // 빙고! 찾음
-                    
+                    if (node.objUrl && node.mtlUrl) return node; 
                     for (const key in node) {
                         const found = findModelData(node[key]);
                         if (found) return found;
                     }
                     return null;
                 }
-
                 const data = findModelData(rawData);
-
-                if (!data) {
-                    alert("JSON 안에 objUrl과 mtlUrl이 존재하지 않습니다!");
-                    return;
-                }
-
                 if(currentModel) scene.remove(currentModel);
 
-                // 텍스처 매핑 (textureMap이든 textureUrls든 다 받아줌)
                 const textureMap = {};
                 if (data.textureMap) {
                     Object.assign(textureMap, data.textureMap);
-                } else if (data.textureUrls && Array.isArray(data.textureUrls)) {
+                } else if (data.textureUrls) {
                     data.textureUrls.forEach(url => {
                         const hash = url.split('/').pop(); 
                         const pureHash = hash.replace('30DAY-', '').replace('7DAY-', ''); 
-                        textureMap[hash] = url;
-                        textureMap[pureHash] = url; 
+                        textureMap[hash] = url; textureMap[pureHash] = url; 
                     });
                 }
 
                 const manager = new THREE.LoadingManager();
                 manager.setURLModifier((url) => {
-                    for (const key in textureMap) {
-                        if (url.includes(key)) return textureMap[key];
-                    }
+                    for (const key in textureMap) { if (url.includes(key)) return textureMap[key]; }
                     return url; 
                 });
 
@@ -166,28 +93,17 @@
                 mtlLoader.setCrossOrigin('anonymous');
                 mtlLoader.load(data.mtlUrl, (materials) => {
                     materials.preload();
-                    
                     for (const key in materials.materials) {
                         const mat = materials.materials[key];
-                        if (mat.map) {
-                            mat.transparent = true;
-                            mat.alphaTest = 0.5; 
-                        } else {
-                            mat.transparent = false; 
-                        }
-                        mat.alphaMap = null; 
-                        mat.depthWrite = true; 
-                        mat.side = THREE.DoubleSide; 
-                        mat.color.setHex(0xffffff); 
+                        mat.transparent = mat.map ? true : false;
+                        mat.alphaTest = 0.5; mat.alphaMap = null; mat.depthWrite = true; mat.side = THREE.DoubleSide; mat.color.setHex(0xffffff); 
                     }
 
                     const objLoader = new THREE.OBJLoader(manager);
                     objLoader.setMaterials(materials);
                     objLoader.load(data.objUrl, (object) => {
-                        
                         const box = new THREE.Box3().setFromObject(object);
                         const center = box.getCenter(new THREE.Vector3());
-                        
                         object.position.set(-center.x, -center.y, -center.z);
                         object.rotation.y = Math.PI;
 
@@ -195,81 +111,54 @@
                         currentModel.add(object);
                         scene.add(currentModel);
                         
-                        const size = box.getSize(new THREE.Vector3());
-                        camera.userData.baseDist = Math.max(size.x, size.y, size.z) * 1.5;
+                        camera.userData.baseDist = Math.max(box.getSize(new THREE.Vector3()).x, box.getSize(new THREE.Vector3()).y) * 1.5;
 
-                        setScale(100);
-                        setCameraAngle('front'); 
+                        // 자동화 파라미터 적용
+                        const s = autoScale / 100;
+                        currentModel.scale.set(s, s, s);
+
+                        if (autoAngle === 'front') {
+                            camera.position.set(0, 0, camera.userData.baseDist);
+                        } else {
+                            const rad = -parseInt(autoAngle) * Math.PI / 180; 
+                            camera.position.set(Math.sin(rad) * camera.userData.baseDist, 0, Math.cos(rad) * camera.userData.baseDist);
+                        }
+                        camera.lookAt(0, 0, 0);
+
+                        // 🌟 n8n(Puppeteer)에게 렌더링 완료를 알리는 신호 생성
+                        setTimeout(() => {
+                            const readyDiv = document.createElement('div');
+                            readyDiv.id = 'render-complete';
+                            document.body.appendChild(readyDiv);
+                        }, 1000); // 텍스처 입혀질 시간 1초 대기
                     });
                 });
-            } catch (e) {
-                alert("알 수 없는 에러가 발생했습니다.");
-                console.error(e);
+            } catch (e) { console.error(e); }
+        }
+
+        // 🌟 URL 파라미터를 읽어서 자동 실행하는 함수
+        function checkAutoRun() {
+            const params = new URLSearchParams(window.location.search);
+            if (params.has('data')) {
+                document.querySelector('.ui-panel').style.display = 'none'; // 스크린샷 방해 안되게 UI 숨김
+                
+                // 파라미터 읽기
+                const jsonData = decodeURIComponent(params.get('data'));
+                const angle = params.get('angle') || 'front';
+                const scale = params.get('scale') || 100;
+                const res = params.get('res') || 1080;
+                
+                // 설정 적용
+                OUTPUT_SIZE = parseInt(res);
+                renderer.setSize(OUTPUT_SIZE, OUTPUT_SIZE);
+                document.getElementById('jsonInput').value = jsonData;
+                
+                // 렌더링 시작
+                loadModel(angle, scale);
             }
         }
 
-        // --- 기능 제어 함수들 ---
-
-        function setScale(percent) {
-            [100, 75, 50, 25].forEach(val => {
-                document.getElementById('btnScale' + val).className = (val === percent) ? 'active' : '';
-            });
-
-            if (!currentModel) return;
-            const s = percent / 100;
-            currentModel.scale.set(s, s, s); 
-        }
-
-        function setCameraAngle(angle) {
-            ['front', 30, 45, 60].forEach(val => {
-                const btnId = val === 'front' ? 'btnAngleFront' : 'btnAngle' + val;
-                document.getElementById(btnId).className = (val === angle) ? 'active' : '';
-            });
-
-            if (!currentModel || !camera.userData.baseDist) return;
-            const dist = camera.userData.baseDist;
-
-            if (angle === 'front') {
-                camera.position.set(0, 0, dist);
-            } else {
-                const rad = -angle * Math.PI / 180; 
-                camera.position.set(Math.sin(rad) * dist, 0, Math.cos(rad) * dist);
-            }
-            camera.lookAt(0, 0, 0);
-            if (controls) controls.update();
-        }
-
-        function setResolution(res) {
-            OUTPUT_SIZE = res;
-            
-            [1080, 720, 540].forEach(val => {
-                document.getElementById('btnRes' + val).className = (val === res) ? 'active' : '';
-            });
-
-            renderer.setSize(OUTPUT_SIZE, OUTPUT_SIZE);
-            document.getElementById('btnDownload').innerText = `⬇ Download PNG (${res}p)`;
-        }
-
-        function setBackground(type) {
-            document.getElementById('btnTrans').className = type === 'transparent' ? 'active' : '';
-            document.getElementById('btnGreen').className = type === 'green' ? 'active' : '';
-            renderer.setClearColor(type === 'transparent' ? 0x000000 : 0x00ff00, type === 'transparent' ? 0 : 1);
-        }
-
-        function downloadPNG() {
-            renderer.render(scene, camera);
-            const link = document.createElement('a');
-            link.download = `roblox_avatar_${OUTPUT_SIZE}p.png`;
-            link.href = renderer.domElement.toDataURL("image/png");
-            link.click();
-        }
-
-        function animate() {
-            requestAnimationFrame(animate);
-            if(controls) controls.update();
-            renderer.render(scene, camera);
-        }
-
+        function animate() { requestAnimationFrame(animate); renderer.render(scene, camera); }
         init();
     </script>
 </body>
