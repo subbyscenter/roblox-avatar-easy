@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>Roblox Avatar Studio (Batch Fixed)</title>
+    <title>Roblox Avatar Studio (Batch Fixed & n8n Ready)</title>
     <style>
         body { margin: 0; display: flex; background: #1e2128; color: #cbd5e1; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; overflow: hidden; height: 100vh; }
         #sidebar { width: 350px; background: #0f172a; padding: 20px; overflow-y: auto; height: 100%; box-sizing: border-box; flex-shrink: 0; }
@@ -193,7 +193,7 @@
             });
         }
 
-        // 🌟 [Batch 모드] 완벽 제어 🌟
+        // 🌟 [UI 전용] Batch 모드 완벽 제어 🌟
         async function startBatchProcess() {
             const rawData = getParsedJSON();
             if (!rawData) return;
@@ -223,7 +223,6 @@
 
                     if(currentModel) scene.remove(currentModel);
                     
-                    // await 로 대기 (실패하면 catch로 빠져서 멈춤 방지)
                     const loadedData = await loadModelAsync(char);
                     currentModel = loadedData.model;
                     camera.userData.baseDist = loadedData.baseDist;
@@ -254,17 +253,15 @@
                 alert("Batch 처리 중 에러가 발생하여 중단되었습니다.");
                 console.error(e);
             } finally {
-                // 에러가 나든 성공하든 무조건 로딩창 꺼주기
                 document.getElementById('overlay').style.display = 'none';
             }
         }
 
-        // 🌟 [Preview 모드] 단일 캐릭터용 🌟
+        // 🌟 [UI 전용] Preview 모드 단일 캐릭터용 🌟
         function loadPreview() {
             const rawData = getParsedJSON();
             if (!rawData) return;
 
-            // Batch용 데이터면 첫번째 캐릭터, 아니면 그냥 자기 자신
             const charData = (rawData.characters && rawData.characters.length > 0) ? rawData.characters[0] : rawData;
             
             if (!charData.objUrl || !charData.mtlUrl) {
@@ -292,13 +289,11 @@
             });
         }
 
-        // JSON 텍스트 파싱 유틸리티
         function getParsedJSON() {
             const txt = document.getElementById('jsonInput').value.trim();
             if (!txt) { alert("JSON 데이터를 입력해주세요."); return null; }
             try {
                 let parsed = JSON.parse(txt);
-                // n8n 배열 구조 대응: 최상위가 배열이면 [0] 리턴
                 if (Array.isArray(parsed) && parsed.length > 0) return parsed[0];
                 return parsed;
             } catch(e) {
@@ -307,7 +302,7 @@
             }
         }
 
-        // --- Preview용 수동 조작 함수들 ---
+        // --- Camera & View Controls ---
         function setScale(percent) {
             [100, 75, 50].forEach(val => { document.getElementById('btnScale' + val).className = (val === percent) ? 'active' : ''; });
             if (!currentModel) return;
@@ -316,7 +311,10 @@
         }
 
         function setCameraAngle(angle) {
-            [0, 30, 45, 60].forEach(val => { document.getElementById('btnAngle' + val).className = (val === angle) ? 'active' : ''; });
+            [0, 30, 45, 60].forEach(val => { 
+                const btn = document.getElementById('btnAngle' + val);
+                if(btn) btn.className = (val === angle) ? 'active' : ''; 
+            });
             if (!currentModel || !camera.userData.baseDist) return;
             const dist = camera.userData.baseDist;
             const rad = -angle * Math.PI / 180; 
@@ -340,6 +338,78 @@
         }
 
         function animate() { requestAnimationFrame(animate); if(controls) controls.update(); renderer.render(scene, camera); }
+
+
+        // 🌟 ======================================================== 🌟
+        // 🌟 [n8n Puppeteer 전용 Headless API] - UI 없이 자동 렌더링 후 Base64 반환
+        // 🌟 ======================================================== 🌟
+        window.renderForPuppeteer = async function(rawData) {
+            // n8n 데이터가 배열 형태로 넘어올 경우 처리
+            if (Array.isArray(rawData)) rawData = rawData[0];
+
+            if (!rawData || !rawData.characters || !rawData.render_settings) {
+                throw new Error("Invalid JSON data format. 'characters' and 'render_settings' are required.");
+            }
+
+            const settings = rawData.render_settings;
+            
+            // 해상도 세팅 ("1080p" 같은 문자열에서 숫자만 추출)
+            const res = parseInt(String(settings.resolution).replace(/[^0-9]/g, '')) || 1080;
+            renderer.setSize(res, res);
+
+            // 배경 세팅
+            if (settings.background && settings.background.toLowerCase() === 'transparent') {
+                renderer.setClearColor(0x000000, 0);
+            } else {
+                renderer.setClearColor(0x00ff00, 1);
+            }
+
+            const results = []; // 생성된 이미지들을 담을 배열
+
+            for (let i = 0; i < rawData.characters.length; i++) {
+                const char = rawData.characters[i];
+                
+                if (currentModel) scene.remove(currentModel);
+
+                try {
+                    // 모델 비동기 로드 대기
+                    const loadedData = await loadModelAsync(char);
+                    currentModel = loadedData.model;
+                    camera.userData.baseDist = loadedData.baseDist;
+                    scene.add(currentModel);
+
+                    // 스케일 설정 ("100%" -> 숫자 변환)
+                    const scaleVal = parseInt(String(settings.scale).replace(/[^0-9]/g, '')) / 100 || 1;
+                    currentModel.scale.set(scaleVal, scaleVal, scaleVal);
+
+                    // 앵글별 렌더링
+                    const angles = settings.angles || [0];
+                    for (let angle of angles) {
+                        setCameraAngle(angle);
+                        
+                        // 모델이 화면에 안착하고 GPU가 렌더링을 끝낼 수 있도록 0.8초 넉넉히 대기
+                        await new Promise(r => setTimeout(r, 800)); 
+                        renderer.render(scene, camera);
+
+                        // 캔버스 데이터를 Base64로 추출 (n8n으로 전달하기 위해 접두사 제거)
+                        const base64Data = renderer.domElement.toDataURL("image/png").replace(/^data:image\/(png|jpg);base64,/, "");
+
+                        results.push({
+                            fileName: `${char.ID_Name}_${angle}.png`,
+                            base64: base64Data
+                        });
+                    }
+                } catch (e) {
+                    console.error(`Error processing ${char.ID_Name}:`, e);
+                    // 한 모델이 에러나더라도 멈추지 않고 다음 모델로 진행
+                }
+            }
+            
+            // Puppeteer에게 최종 결과 배열 Return
+            return results; 
+        };
+
+        // 초기화 실행
         init();
     </script>
 </body>
