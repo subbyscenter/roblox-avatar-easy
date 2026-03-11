@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>Roblox Avatar Studio (PiratePeep Core)</title>
+    <title>Roblox Avatar Studio (Perfect Face Fixed)</title>
     <style>
         body { margin: 0; display: flex; background: #1e2128; color: #cbd5e1; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; overflow: hidden; height: 100vh; }
         #sidebar { width: 350px; background: #0f172a; padding: 20px; overflow-y: auto; height: 100%; box-sizing: border-box; flex-shrink: 0; }
@@ -93,10 +93,10 @@
             renderer.setClearColor(0x000000, 0); 
             document.getElementById('viewer').appendChild(renderer.domElement);
 
-            // PiratePeep 스타일 조명 (AmbientLight 강하게, DirectionalLight 부드럽게)
-            scene.add(new THREE.AmbientLight(0xffffff, 0.8));
-            const dirLight = new THREE.DirectionalLight(0xffffff, 0.5);
-            dirLight.position.set(5, 5, 5);
+            // 얼굴이 잘 보이도록 정면 조명(DirectionalLight) 강화
+            scene.add(new THREE.AmbientLight(0xffffff, 0.9));
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.7);
+            dirLight.position.set(0, 10, 15);
             scene.add(dirLight);
 
             controls = new THREE.OrbitControls(camera, renderer.domElement);
@@ -119,39 +119,49 @@
                 });
 
                 const manager = new THREE.LoadingManager();
+                
+                // 🌟 [핵심 픽스] 모든 텍스처 요청을 완벽하게 프록시로 가로채기 🌟
                 manager.setURLModifier((url) => {
+                    // 1. n8n 배열에 있는 텍스처면 그대로 연결
                     for (const key in textureMap) {
                         if (url.includes(key)) return textureMap[key];
+                    }
+                    
+                    // 2. n8n에 없는 텍스처(얼굴 표정 등)가 로블록스 도메인을 가리키면 강제로 프록시(roproxy) 태우기!
+                    if (url.includes('rbxcdn.com') || url.includes('roblox.com')) {
+                        return url.replace('rbxcdn.com', 'roproxy.com')
+                                  .replace('roblox.com', 'roproxy.com')
+                                  .replace('http://', 'https://');
                     }
                     return url;
                 });
 
                 const mtlLoader = new THREE.MTLLoader(manager);
-                mtlLoader.setCrossOrigin('anonymous');
+                mtlLoader.setCrossOrigin('anonymous'); // CORS 무시
                 mtlLoader.load(data.mtlUrl, (materials) => {
                     materials.preload();
                     
-                    // 🌟 [PiratePeep 핵심 로직 이식] 🌟
                     for (const key in materials.materials) {
                         const mat = materials.materials[key];
                         
-                        // 1. 텍스처 맵이 있는 경우만 투명도 켜기
                         if (mat.map) {
                             mat.transparent = true;
-                            mat.alphaTest = 0.5; // 배경 구멍 오려내기
+                            mat.alphaTest = 0.5; 
                         } else {
-                            mat.transparent = false; // 피부/맨살은 절대 투명해지지 않게
+                            // 얼굴/피부처럼 텍스처가 따로 없는 파츠는 투명도 끄기
+                            mat.transparent = false; 
                         }
                         
-                        // 2. 로블록스 알파 맵 렌더링 꼬임 방지 (강제 삭제)
                         mat.alphaMap = null;
-                        
-                        // 3. 렌더링 겹침(Z-fighting) 방지
                         mat.depthWrite = true;
                         mat.side = THREE.DoubleSide;
-                        
-                        // 4. 원래 텍스처 색상 복원
                         mat.color.setHex(0xffffff); 
+
+                        // 얼굴이 빛을 흡수해버리는 현상 방지 (광택 및 반사 리셋)
+                        if (mat.type === 'MeshPhongMaterial') {
+                            mat.emissive.setHex(0x000000); 
+                            mat.specular = new THREE.Color(0x111111);
+                        }
                     }
 
                     const objLoader = new THREE.OBJLoader(manager);
@@ -159,22 +169,18 @@
                     objLoader.load(data.objUrl, (object) => {
                         currentModel = object;
 
-                        // 🌟 [PiratePeep 카메라 중앙 정렬 로직 이식] 🌟
                         const box = new THREE.Box3().setFromObject(object);
                         const center = box.getCenter(new THREE.Vector3());
                         const size = box.getSize(new THREE.Vector3());
 
-                        // 모델의 중심점을 (0,0,0)으로 이동
                         object.position.x += (object.position.x - center.x);
                         object.position.y += (object.position.y - center.y);
                         object.position.z += (object.position.z - center.z);
                         
-                        // 기본 후면을 보고 있으므로 정면으로 돌림
                         object.rotation.y = Math.PI;
 
                         scene.add(object);
                         
-                        // 카메라를 모델 크기에 비례하여 자동으로 뒤로 뺌 (약 1.5배 거리)
                         const maxDim = Math.max(size.x, size.y, size.z);
                         camera.position.set(0, 0, maxDim * 1.5);
                         camera.lookAt(0, 0, 0);
@@ -199,7 +205,6 @@
         function setCameraAngle(type) {
             if (!currentModel) return;
             
-            // 모델 크기에 비례한 카메라 거리 계산
             const box = new THREE.Box3().setFromObject(currentModel);
             const size = box.getSize(new THREE.Vector3());
             const dist = Math.max(size.x, size.y, size.z) * 1.5;
@@ -211,7 +216,7 @@
                 camera.position.set(Math.sin(rad) * dist, 0, Math.cos(rad) * dist);
             }
             camera.lookAt(0, 0, 0);
-            controls.update();
+            if(controls) controls.update();
         }
 
         function updatePose() {
