@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>Roblox Avatar Studio (Simple & Stable)</title>
+    <title>Roblox Avatar Studio (Smart Parser)</title>
     <style>
         body { margin: 0; display: flex; background: #1e2128; color: #cbd5e1; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; overflow: hidden; height: 100vh; }
         #sidebar { width: 350px; background: #0f172a; padding: 20px; overflow-y: auto; height: 100%; box-sizing: border-box; flex-shrink: 0; }
@@ -10,7 +10,7 @@
         #viewer { width: 100%; max-width: 80vh; aspect-ratio: 1 / 1; box-shadow: 0 10px 30px rgba(0,0,0,0.5); background: #000; }
         #viewer canvas { width: 100% !important; height: 100% !important; } 
 
-        textarea { width: 100%; height: 60px; background: #1e293b; color: white; border: 1px solid #334155; padding: 10px; border-radius: 5px; box-sizing: border-box; margin-bottom: 10px;}
+        textarea { width: 100%; height: 80px; background: #1e293b; color: white; border: 1px solid #334155; padding: 10px; border-radius: 5px; box-sizing: border-box; margin-bottom: 10px;}
         button { width: 100%; padding: 10px; background: #3b82f6; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; margin-bottom: 10px; transition: 0.2s; }
         button:hover { background: #2563eb; }
         
@@ -28,8 +28,8 @@
         <h3 style="color: white; margin-top: 0;">Roblox Avatar Studio</h3>
         
         <div class="control-group">
-            <label>Input JSON Data</label>
-            <textarea id="jsonInput" placeholder='[{"objUrl": "...", "mtlUrl": "..."}]'></textarea>
+            <label>Input JSON Data (형식 자유)</label>
+            <textarea id="jsonInput" placeholder='JSON을 복사해서 넣으세요 (배열이든 객체든 상관없습니다)'></textarea>
             <button onclick="loadModel()">Load Character</button>
         </div>
 
@@ -96,7 +96,6 @@
             renderer.setClearColor(0x000000, 0); 
             document.getElementById('viewer').appendChild(renderer.domElement);
 
-            // 빛 셋업
             scene.add(new THREE.AmbientLight(0xffffff, 0.8));
             const dirLight = new THREE.DirectionalLight(0xffffff, 0.6);
             dirLight.position.set(5, 10, 10);
@@ -111,16 +110,49 @@
 
         function loadModel() {
             try {
-                const data = JSON.parse(document.getElementById('jsonInput').value)[0];
+                const inputText = document.getElementById('jsonInput').value.trim();
+                let rawData;
+                
+                try {
+                    rawData = JSON.parse(inputText);
+                } catch(e) {
+                    alert("JSON 형식이 잘못되었습니다. (따옴표나 괄호 누락 등)");
+                    return;
+                }
+
+                // 🌟 [스마트 탐색기] 객체든 배열이든 다 까보고 objUrl과 mtlUrl이 있는 곳을 찾아냅니다.
+                function findModelData(node) {
+                    if (!node || typeof node !== 'object') return null;
+                    if (node.objUrl && node.mtlUrl) return node; // 빙고! 찾음
+                    
+                    for (const key in node) {
+                        const found = findModelData(node[key]);
+                        if (found) return found;
+                    }
+                    return null;
+                }
+
+                const data = findModelData(rawData);
+
+                if (!data) {
+                    alert("JSON 안에 objUrl과 mtlUrl이 존재하지 않습니다!");
+                    return;
+                }
+
                 if(currentModel) scene.remove(currentModel);
 
+                // 텍스처 매핑 (textureMap이든 textureUrls든 다 받아줌)
                 const textureMap = {};
-                data.textureUrls.forEach(url => {
-                    const hash = url.split('/').pop(); 
-                    const pureHash = hash.replace('30DAY-', '').replace('7DAY-', ''); 
-                    textureMap[hash] = url;
-                    textureMap[pureHash] = url; 
-                });
+                if (data.textureMap) {
+                    Object.assign(textureMap, data.textureMap);
+                } else if (data.textureUrls && Array.isArray(data.textureUrls)) {
+                    data.textureUrls.forEach(url => {
+                        const hash = url.split('/').pop(); 
+                        const pureHash = hash.replace('30DAY-', '').replace('7DAY-', ''); 
+                        textureMap[hash] = url;
+                        textureMap[pureHash] = url; 
+                    });
+                }
 
                 const manager = new THREE.LoadingManager();
                 manager.setURLModifier((url) => {
@@ -153,30 +185,25 @@
                     objLoader.setMaterials(materials);
                     objLoader.load(data.objUrl, (object) => {
                         
-                        // 🌟 중앙 정렬 및 스케일 버그 해결 로직 🌟
                         const box = new THREE.Box3().setFromObject(object);
                         const center = box.getCenter(new THREE.Vector3());
                         
-                        // 1. 오브젝트를 완벽히 0,0,0 좌표의 중심으로 이동
                         object.position.set(-center.x, -center.y, -center.z);
                         object.rotation.y = Math.PI;
 
-                        // 2. 오브젝트를 투명한 그룹(Wrapper)으로 감싸기 (스케일 조절 시 제자리에 있게 함)
                         currentModel = new THREE.Group();
                         currentModel.add(object);
                         scene.add(currentModel);
                         
-                        // 카메라 기본 거리를 모델 사이즈에 비례하여 저장해둠
                         const size = box.getSize(new THREE.Vector3());
                         camera.userData.baseDist = Math.max(size.x, size.y, size.z) * 1.5;
 
-                        // 로드 완료 시 기본값 세팅
                         setScale(100);
                         setCameraAngle('front'); 
                     });
                 });
             } catch (e) {
-                alert("JSON 로드 중 에러가 발생했습니다.");
+                alert("알 수 없는 에러가 발생했습니다.");
                 console.error(e);
             }
         }
@@ -184,18 +211,16 @@
         // --- 기능 제어 함수들 ---
 
         function setScale(percent) {
-            // UI 버튼 갱신
             [100, 75, 50, 25].forEach(val => {
                 document.getElementById('btnScale' + val).className = (val === percent) ? 'active' : '';
             });
 
             if (!currentModel) return;
             const s = percent / 100;
-            currentModel.scale.set(s, s, s); // 그룹(Wrapper)의 스케일을 줄이므로 제자리에서 작아짐
+            currentModel.scale.set(s, s, s); 
         }
 
         function setCameraAngle(angle) {
-            // UI 버튼 갱신
             ['front', 30, 45, 60].forEach(val => {
                 const btnId = val === 'front' ? 'btnAngleFront' : 'btnAngle' + val;
                 document.getElementById(btnId).className = (val === angle) ? 'active' : '';
@@ -207,7 +232,7 @@
             if (angle === 'front') {
                 camera.position.set(0, 0, dist);
             } else {
-                const rad = -angle * Math.PI / 180; // 우측 측면이 보이게 카메라를 좌측으로 이동
+                const rad = -angle * Math.PI / 180; 
                 camera.position.set(Math.sin(rad) * dist, 0, Math.cos(rad) * dist);
             }
             camera.lookAt(0, 0, 0);
@@ -217,12 +242,10 @@
         function setResolution(res) {
             OUTPUT_SIZE = res;
             
-            // UI 버튼 갱신
             [1080, 720, 540].forEach(val => {
                 document.getElementById('btnRes' + val).className = (val === res) ? 'active' : '';
             });
 
-            // 내부 렌더러 사이즈 변경 (화면 비율은 CSS로 고정되어 있으므로 출력본 해상도만 바뀜)
             renderer.setSize(OUTPUT_SIZE, OUTPUT_SIZE);
             document.getElementById('btnDownload').innerText = `⬇ Download PNG (${res}p)`;
         }
