@@ -1,60 +1,222 @@
 <!DOCTYPE html>
-<html>
+<html lang="ko">
 <head>
-    <title>Roblox Avatar Simple Renderer</title>
+    <meta charset="UTF-8">
+    <title>Roblox Avatar Studio</title>
     <style>
-        body { margin: 0; display: flex; flex-direction: column; align-items: center; background: #1a1a1a; color: white; font-family: sans-serif; }
-        #viewer { width: 500px; height: 500px; background: #000; }
-        textarea { width: 500px; height: 100px; margin: 10px; }
+        body { margin: 0; display: flex; background: #1e2128; color: #cbd5e1; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; overflow: hidden; }
+        #sidebar { width: 350px; background: #0f172a; padding: 20px; overflow-y: auto; height: 100vh; box-sizing: border-box; }
+        #viewer-container { flex-grow: 1; display: flex; justify-content: center; align-items: center; position: relative; }
+        #viewer { width: 100%; height: 100%; }
+        
+        textarea { width: 100%; height: 100px; background: #1e293b; color: white; border: 1px solid #334155; padding: 10px; border-radius: 5px; box-sizing: border-box; margin-bottom: 10px;}
+        button { width: 100%; padding: 10px; background: #3b82f6; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; margin-bottom: 20px; transition: 0.2s; }
+        button:hover { background: #2563eb; }
+        
+        .control-group { margin-bottom: 15px; }
+        .control-group label { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 5px; color: #94a3b8; }
+        input[type="range"] { width: 100%; cursor: pointer; }
+        
+        .bg-toggle { display: flex; gap: 10px; margin-bottom: 20px; }
+        .bg-toggle button { margin: 0; background: #334155; color: #94a3b8; }
+        .bg-toggle button.active { background: #3b82f6; color: white; }
     </style>
 </head>
 <body>
-    <h3>Paste JSON from n8n</h3>
-    <textarea id="jsonInput" placeholder='Paste your JSON here...'></textarea>
-    <button onclick="loadModel()">Render Model</button>
-    <button onclick="saveImage()">Download PNG</button>
-    <div id="viewer"></div>
 
+    <div id="sidebar">
+        <h3 style="color: white; margin-top: 0;">Roblox Avatar Studio</h3>
+        
+        <div class="control-group">
+            <label style="color: white; font-weight: bold;">1. Input JSON Data</label>
+            <textarea id="jsonInput" placeholder='[{"objUrl": "...", "mtlUrl": "..."}]'></textarea>
+            <button onclick="loadModel()">Load Character</button>
+        </div>
+
+        <div class="bg-toggle">
+            <button id="btnTrans" class="active" onclick="setBackground('transparent')">Transparent</button>
+            <button id="btnGreen" onclick="setBackground('green')">Green Screen</button>
+        </div>
+
+        <h4 style="color: white; border-bottom: 1px solid #334155; padding-bottom: 5px;">POSE CONTROL</h4>
+        
+        <div class="control-group">
+            <label>Right Arm X (Forward/Back) <span id="val_ra_x">0</span></label>
+            <input type="range" id="ra_x" min="-180" max="180" value="0" oninput="updatePose()">
+        </div>
+        <div class="control-group">
+            <label>Right Arm Z (Up/Down) <span id="val_ra_z">0</span></label>
+            <input type="range" id="ra_z" min="-180" max="180" value="0" oninput="updatePose()">
+        </div>
+        <div class="control-group">
+            <label>Left Arm X (Forward/Back) <span id="val_la_x">0</span></label>
+            <input type="range" id="la_x" min="-180" max="180" value="0" oninput="updatePose()">
+        </div>
+        <div class="control-group">
+            <label>Left Arm Z (Up/Down) <span id="val_la_z">0</span></label>
+            <input type="range" id="la_z" min="-180" max="180" value="0" oninput="updatePose()">
+        </div>
+
+        <button onclick="downloadPNG()" style="background: #10b981; margin-top: 20px;">Download PNG</button>
+    </div>
+
+    <div id="viewer-container">
+        <div id="viewer"></div>
+    </div>
+
+    <!-- Three.js Libraries -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/OBJLoader.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/MTLLoader.js"></script>
-    <script>
-        let scene, camera, renderer, currentModel;
-        
-        // 씬 초기화
-        scene = new THREE.Scene();
-        camera = new THREE.PerspectiveCamera(75, 1, 0.1, 1000);
-        renderer = new THREE.WebGLRenderer({ preserveDrawingBuffer: true, alpha: true });
-        renderer.setSize(500, 500);
-        document.getElementById('viewer').appendChild(renderer.domElement);
-        scene.add(new THREE.AmbientLight(0xffffff, 1));
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 
-        function loadModel() {
-            const data = JSON.parse(document.getElementById('jsonInput').value)[0];
-            
-            const mtlLoader = new THREE.MTLLoader();
-            mtlLoader.load(data.mtlUrl, (materials) => {
-                materials.preload();
-                const objLoader = new THREE.OBJLoader();
-                objLoader.setMaterials(materials);
-                objLoader.load(data.objUrl, (object) => {
-                    if(currentModel) scene.remove(currentModel);
-                    currentModel = object;
-                    scene.add(object);
-                    
-                    camera.position.set(data.camera.position.x, data.camera.position.y, data.camera.position.z);
-                    camera.lookAt(0, 100, 0); // 모델 중심 바라보기
-                    renderer.render(scene, camera);
-                });
-            });
+    <script>
+        let scene, camera, renderer, controls, currentModel;
+        
+        // 1. Scene Setup
+        function init() {
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(45, (window.innerWidth - 350) / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 0, 15); // 기본 카메라 위치
+
+            renderer = new THREE.WebGLRenderer({ preserveDrawingBuffer: true, alpha: true, antialias: true });
+            renderer.setSize(window.innerWidth - 350, window.innerHeight);
+            renderer.setClearColor(0x000000, 0); // 기본 투명
+            document.getElementById('viewer').appendChild(renderer.domElement);
+
+            // 빛 설정 (캐릭터가 잘 보이도록)
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
+            scene.add(ambientLight);
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
+            directionalLight.position.set(5, 10, 5);
+            scene.add(directionalLight);
+
+            // 마우스 컨트롤 (OrbitControls)
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.target.set(0, 0, 0);
+
+            animate();
         }
 
-        function saveImage() {
+        // 2. Load Model & Fix Texture URLs
+        function loadModel() {
+            try {
+                const inputData = document.getElementById('jsonInput').value;
+                const data = JSON.parse(inputData)[0]; // n8n 배열의 첫번째 요소
+                
+                if(currentModel) scene.remove(currentModel); // 기존 모델 삭제
+
+                // 텍스처 해시 매핑 딕셔너리 생성 (가장 중요한 부분!)
+                const textureMap = {};
+                data.textureUrls.forEach(url => {
+                    const hash = url.split('/').pop();
+                    textureMap[hash] = url;
+                    textureMap[hash.replace('30DAY-', '')] = url; // 해시 변형 대비
+                });
+
+                // URL 가로채기: MTL 파일이 텍스처를 요청할 때 올바른 CDN URL로 바꿔치기
+                const manager = new THREE.LoadingManager();
+                manager.setURLModifier((url) => {
+                    for (const key in textureMap) {
+                        if (url.includes(key)) return textureMap[key];
+                    }
+                    return url;
+                });
+
+                // MTL 로드
+                const mtlLoader = new THREE.MTLLoader(manager);
+                mtlLoader.setCrossOrigin('anonymous');
+                mtlLoader.load(data.mtlUrl, (materials) => {
+                    materials.preload();
+                    
+                    // OBJ 로드
+                    const objLoader = new THREE.OBJLoader(manager);
+                    objLoader.setMaterials(materials);
+                    objLoader.load(data.objUrl, (object) => {
+                        currentModel = object;
+
+                        // 모델을 화면 중앙(0,0,0)으로 이동 (OrbitControl 최적화)
+                        const min = data.aabb.min;
+                        const max = data.aabb.max;
+                        const centerY = (min.y + max.y) / 2;
+                        object.position.set(0, -centerY, 0); 
+                        
+                        scene.add(object);
+                        resetSliders();
+                    });
+                });
+            } catch (e) {
+                alert("JSON 데이터를 파싱하거나 로드하는 중 오류가 발생했습니다. 데이터를 확인해주세요.");
+                console.error(e);
+            }
+        }
+
+        // 3. Pose Control (슬라이더 조작 시 실행)
+        function updatePose() {
+            if (!currentModel) return;
+
+            // 슬라이더 값 가져오기 (각도 -> 라디안 변환)
+            const ra_x = document.getElementById('ra_x').value * (Math.PI / 180);
+            const ra_z = document.getElementById('ra_z').value * (Math.PI / 180);
+            const la_x = document.getElementById('la_x').value * (Math.PI / 180);
+            const la_z = document.getElementById('la_z').value * (Math.PI / 180);
+
+            // UI 텍스트 업데이트
+            document.getElementById('val_ra_x').innerText = document.getElementById('ra_x').value + '°';
+            document.getElementById('val_ra_z').innerText = document.getElementById('ra_z').value + '°';
+            document.getElementById('val_la_x').innerText = document.getElementById('la_x').value + '°';
+            document.getElementById('val_la_z').innerText = document.getElementById('la_z').value + '°';
+
+            // 뼈대 찾아서 회전 적용 (R6 기준: RightArm, LeftArm / R15 대비 예외처리)
+            const rightArm = currentModel.getObjectByName('RightArm') || currentModel.getObjectByName('RightUpperArm');
+            const leftArm = currentModel.getObjectByName('LeftArm') || currentModel.getObjectByName('LeftUpperArm');
+
+            if (rightArm) { rightArm.rotation.x = ra_x; rightArm.rotation.z = ra_z; }
+            if (leftArm) { leftArm.rotation.x = la_x; leftArm.rotation.z = la_z; }
+        }
+
+        function resetSliders() {
+            document.querySelectorAll('input[type="range"]').forEach(slider => { slider.value = 0; });
+            updatePose();
+        }
+
+        // 4. Background Toggle
+        function setBackground(type) {
+            document.getElementById('btnTrans').className = type === 'transparent' ? 'active' : '';
+            document.getElementById('btnGreen').className = type === 'green' ? 'active' : '';
+            
+            if(type === 'transparent') {
+                renderer.setClearColor(0x000000, 0);
+            } else {
+                renderer.setClearColor(0x00ff00, 1); // 크로마키 그린
+            }
+        }
+
+        // 5. Download Image
+        function downloadPNG() {
+            renderer.render(scene, camera); // 캡처 전 최신 상태 렌더링
             const link = document.createElement('a');
-            link.download = 'avatar.png';
+            link.download = 'roblox_avatar.png';
             link.href = renderer.domElement.toDataURL("image/png");
             link.click();
         }
+
+        // Animation Loop
+        function animate() {
+            requestAnimationFrame(animate);
+            if(controls) controls.update();
+            renderer.render(scene, camera);
+        }
+
+        // Window Resize Handle
+        window.addEventListener('resize', () => {
+            camera.aspect = (window.innerWidth - 350) / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth - 350, window.innerHeight);
+        });
+
+        init();
     </script>
 </body>
 </html>
