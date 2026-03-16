@@ -114,7 +114,7 @@
             animate();
         }
 
-        // 🌟 안정성이 대폭 강화된 비동기 로더 (누락된 텍스처 투명 처리 완벽 적용) 🌟
+        // 🌟 누락된 텍스처 투명 처리 및 렌더링 최적화 🌟
         function loadModelAsync(charData) {
             return new Promise((resolve, reject) => {
                 try {
@@ -128,20 +128,27 @@
                         });
                     }
 
-                    // 1x1 투명 픽셀 이미지 (Base64) - JSON에 없는 파츠를 안보이게 처리하기 위함
+                    // 1x1 투명 픽셀 이미지 (Base64) - JSON에 없는 텍스처를 투명하게 날려버림
                     const emptyTexture = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
 
                     const manager = new THREE.LoadingManager();
                     manager.setURLModifier((url) => {
-                        // 1. JSON (textureUrls)에 존재하는 텍스처면 해당 링크 반환
+                        // 1. obj 또는 mtl 파일 자체는 변환하지 않고 그대로 통과시킵니다. (오류 방지 핵심)
+                        if (url === charData.objUrl || url === charData.mtlUrl) {
+                            return url;
+                        }
+
+                        // 2. JSON (textureUrls)에 존재하는 텍스처면 해당 링크 반환
                         for (const key in textureMap) { 
                             if (url.includes(key)) return textureMap[key]; 
                         }
-                        // 2. 기본 얼굴용 로프록시 링크나, 이미 Base64로 변환된 데이터는 허용
+
+                        // 3. 기본 얼굴용 로프록시 링크나, 이미 Base64로 변환된 데이터는 통과
                         if (url.includes('tr.roproxy.com') || url.startsWith('data:')) {
                             return url;
                         }
-                        // 3. JSON 배열에 없는 텍스처(예: 삭제한 목걸이 텍스처 등)는 '투명 픽셀'로 강제 교체하여 숨김
+
+                        // 4. 그 외(배열에서 삭제된 목걸이 텍스처 등)는 '투명 픽셀'로 강제 교체
                         return emptyTexture; 
                     });
 
